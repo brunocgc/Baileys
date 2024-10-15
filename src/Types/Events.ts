@@ -4,11 +4,11 @@ import { AuthenticationCreds } from './Auth'
 import { WACallEvent } from './Call'
 import { Chat, ChatUpdate, PresenceData } from './Chat'
 import { Contact } from './Contact'
-import { GroupMetadata, ParticipantAction, RequestJoinAction, RequestJoinMethod } from './GroupMetadata'
-import { Label } from './Label'
-import { LabelAssociation } from './LabelAssociation'
+import { GroupMetadata, ParticipantAction } from './GroupMetadata'
 import { MessageUpsertType, MessageUserReceiptUpdate, WAMessage, WAMessageKey, WAMessageUpdate } from './Message'
 import { ConnectionState } from './State'
+import { Label } from './Label'
+import { LabelAssociation } from './LabelAssociation'
 
 export type BaileysEventMap = {
     /** connection state has been updated -- WS closed, opened, connecting etc. */
@@ -20,16 +20,12 @@ export type BaileysEventMap = {
         chats: Chat[]
         contacts: Contact[]
         messages: WAMessage[]
-        isLatest?: boolean
-        progress?: number | null
-        syncType?: proto.HistorySync.HistorySyncType
-        peerDataRequestSessionId?: string | null
+        isLatest: boolean
     }
     /** upsert chats */
     'chats.upsert': Chat[]
     /** update the given chats */
     'chats.update': ChatUpdate[]
-    'chats.phoneNumberShare': {lid: string, jid: string}
     /** delete chats with given ID */
     'chats.delete': string[]
     /** presence of contact in a chat updated */
@@ -44,9 +40,8 @@ export type BaileysEventMap = {
     /**
      * add/update the given messages. If they were received while the connection was online,
      * the update will have type: "notify"
-     * if requestId is provided, then the messages was received from the phone due to it being unavailable
      *  */
-    'messages.upsert': { messages: WAMessage[], type: MessageUpsertType, requestId?: string }
+    'messages.upsert': { messages: WAMessage[], type: MessageUpsertType }
     /** message was reacted to. If reaction was removed -- then "reaction.text" will be falsey */
     'messages.reaction': { key: WAMessageKey, reaction: proto.IReaction }[]
 
@@ -56,11 +51,9 @@ export type BaileysEventMap = {
     'groups.update': Partial<GroupMetadata>[]
     /** apply an action to participants in a group */
     'group-participants.update': { id: string, author: string, participants: string[], action: ParticipantAction }
-    'group.join-request': { id: string, author: string, participant: string, action: RequestJoinAction, method: RequestJoinMethod }
 
     'blocklist.set': { blocklist: string[] }
     'blocklist.update': { blocklist: string[], type: 'add' | 'remove' }
-
     /** Receive an update on a call, including when the call was received, rejected, accepted */
     'call': WACallEvent[]
     'labels.edit': Label
@@ -74,9 +67,6 @@ export type BufferedEventData = {
         messages: { [uqId: string]: WAMessage }
         empty: boolean
         isLatest: boolean
-        progress?: number | null
-        syncType?: proto.HistorySync.HistorySyncType
-        peerDataRequestSessionId?: string
     }
     chatUpserts: { [jid: string]: Chat }
     chatUpdates: { [jid: string]: ChatUpdate }

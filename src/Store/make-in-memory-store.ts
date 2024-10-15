@@ -1,4 +1,4 @@
-import type KeyedDB from '@adiwajshing/keyed-db'
+import KeyedDB from '@adiwajshing/keyed-db'
 import type { Comparable } from '@adiwajshing/keyed-db/lib/Types'
 import type { Logger } from 'pino'
 import { proto } from '../../WAProto'
@@ -7,8 +7,8 @@ import type makeMDSocket from '../Socket'
 import type { BaileysEventEmitter, Chat, ConnectionState, Contact, GroupMetadata, PresenceData, WAMessage, WAMessageCursor, WAMessageKey } from '../Types'
 import { Label } from '../Types/Label'
 import { LabelAssociation, LabelAssociationType, MessageLabelAssociation } from '../Types/LabelAssociation'
-import { md5, toNumber, updateMessageWithReaction, updateMessageWithReceipt } from '../Utils'
-import { jidDecode, jidNormalizedUser } from '../WABinary'
+import { toNumber, updateMessageWithReaction, updateMessageWithReceipt } from '../Utils'
+import { jidNormalizedUser } from '../WABinary'
 import makeOrderedDictionary from './make-ordered-dictionary'
 import { ObjectRepository } from './object-repository'
 
@@ -30,26 +30,64 @@ export type BaileysInMemoryStoreConfig = {
 	chatKey?: Comparable<Chat, string>
 	labelAssociationKey?: Comparable<LabelAssociation, string>
 	logger?: Logger
-	socket?: WASocket
 }
 
 const makeMessagesDictionary = () => makeOrderedDictionary(waMessageID)
 
-export default (config: BaileysInMemoryStoreConfig) => {
-	const socket = config.socket
-	const chatKey = config.chatKey || waChatKey(true)
-	const labelAssociationKey = config.labelAssociationKey || waLabelAssociationKey
-	const logger: Logger = config.logger || DEFAULT_CONNECTION_CONFIG.logger.child({ stream: 'in-mem-store' })
-	const KeyedDB = require('@adiwajshing/keyed-db').default
+const predefinedLabels = Object.freeze<Record<string, Label>>({
+	'0': {
+		id: '0',
+		name: 'New customer',
+		predefinedId: '0',
+		color: 0,
+		deleted: false
+	},
+	'1': {
+		id: '1',
+		name: 'New order',
+		predefinedId: '1',
+		color: 1,
+		deleted: false
+	},
+	'2': {
+		id: '2',
+		name: 'Pending payment',
+		predefinedId: '2',
+		color: 2,
+		deleted: false
+	},
+	'3': {
+		id: '3',
+		name: 'Paid',
+		predefinedId: '3',
+		color: 3,
+		deleted: false
+	},
+	'4': {
+		id: '4',
+		name: 'Order completed',
+		predefinedId: '4',
+		color: 4,
+		deleted: false
+	}
+})
 
-	const chats = new KeyedDB(chatKey, c => c.id) as KeyedDB<Chat, string>
+export default (
+	{ logger: _logger, chatKey, labelAssociationKey }: BaileysInMemoryStoreConfig
+) => {
+	// const logger = _logger || DEFAULT_CONNECTION_CONFIG.logger.child({ stream: 'in-mem-store' })
+	chatKey = chatKey || waChatKey(true)
+	labelAssociationKey = labelAssociationKey || waLabelAssociationKey
+	const logger = _logger || DEFAULT_CONNECTION_CONFIG.logger.child({ stream: 'in-mem-store' })
+
+	const chats = new KeyedDB<Chat, string>(chatKey, c => c.id)
 	const messages: { [_: string]: ReturnType<typeof makeMessagesDictionary> } = {}
 	const contacts: { [_: string]: Contact } = {}
 	const groupMetadata: { [_: string]: GroupMetadata } = {}
 	const presences: { [id: string]: { [participant: string]: PresenceData } } = {}
 	const state: ConnectionState = { connection: 'close' }
-	const labels = new ObjectRepository<Label>()
-	const labelAssociations = new KeyedDB(labelAssociationKey, labelAssociationKey.key) as KeyedDB<LabelAssociation, string>
+	const labels = new ObjectRepository<Label>(predefinedLabels)
+	const labelAssociations = new KeyedDB<LabelAssociation, string>(labelAssociationKey, labelAssociationKey.key)
 
 	const assertMessageList = (jid: string) => {
 		if(!messages[jid]) {
@@ -71,9 +109,9 @@ export default (config: BaileysInMemoryStoreConfig) => {
 
 		return oldContacts
 	}
-
+	
 	const labelsUpsert = (newLabels: Label[]) => {
-		for(const label of newLabels) {
+		for (const label of newLabels) {
 			labels.upsertById(label.id, label)
 		}
 	}
@@ -93,14 +131,8 @@ export default (config: BaileysInMemoryStoreConfig) => {
 			chats: newChats,
 			contacts: newContacts,
 			messages: newMessages,
-			isLatest,
-			syncType
+			isLatest
 		}) => {
-			if(syncType === proto.HistorySync.HistorySyncType.ON_DEMAND) {
-				return // FOR NOW,
-				//TODO: HANDLE
-			}
-
 			if(isLatest) {
 				chats.clear()
 
@@ -113,13 +145,11 @@ export default (config: BaileysInMemoryStoreConfig) => {
 			logger.debug({ chatsAdded }, 'synced chats')
 
 			const oldContacts = contactsUpsert(newContacts)
-			if(isLatest) {
-				for(const jid of oldContacts) {
-					delete contacts[jid]
-				}
+			for(const jid of oldContacts) {
+				delete contacts[jid]
 			}
 
-			logger.debug({ deletedContacts: isLatest ? oldContacts.size : 0, newContacts }, 'synced contacts')
+			logger.debug({ deletedContacts: oldContacts.size, newContacts }, 'synced contacts')
 
 			for(const msg of newMessages) {
 				const jid = msg.key.remoteJid!
@@ -130,34 +160,13 @@ export default (config: BaileysInMemoryStoreConfig) => {
 			logger.debug({ messages: newMessages.length }, 'synced messages')
 		})
 
-		ev.on('contacts.upsert', contacts => {
-			contactsUpsert(contacts)
-		})
-
-		ev.on('contacts.update', async updates => {
+		ev.on('contacts.update', updates => {
 			for(const update of updates) {
-				let contact: Contact
 				if(contacts[update.id!]) {
-					contact = contacts[update.id!]
+					Object.assign(contacts[update.id!], update)
 				} else {
-					const contactHashes = await Promise.all(Object.keys(contacts).map(async contactId => {
-						const { user } = jidDecode(contactId)!
-						return [contactId, (await md5(Buffer.from(user + 'WA_ADD_NOTIF', 'utf8'))).toString('base64').slice(0, 3)]
-					}))
-					contact = contacts[contactHashes.find(([, b]) => b === update.id)?.[0] || ''] // find contact by attrs.hash, when user is not saved as a contact
+					logger.debug({ update }, 'got update for non-existant contact')
 				}
-
-				if(contact) {
-					if(update.imgUrl === 'changed') {
-						contact.imgUrl = socket ? await socket?.profilePictureUrl(contact.id) : undefined
-					} else if(update.imgUrl === 'removed') {
-						delete contact.imgUrl
-					}
-				} else {
-					return logger.debug({ update }, 'got update for non-existant contact')
-				}
-
-				Object.assign(contacts[contact.id], contact)
 			}
 		})
 		ev.on('chats.upsert', newChats => {
@@ -178,61 +187,56 @@ export default (config: BaileysInMemoryStoreConfig) => {
 				}
 			}
 		})
-
+		
 		ev.on('labels.edit', (label: Label) => {
-			if(label.deleted) {
+			if (label.deleted) {
 				return labels.deleteById(label.id)
 			}
-
 			// WhatsApp can store only up to 20 labels
-			if(labels.count() < 20) {
+			if (labels.count() < 20) {
 				return labels.upsertById(label.id, label)
 			}
-
 			logger.error('Labels count exceed')
 		})
-
 		ev.on('labels.association', ({ type, association }) => {
 			switch (type) {
-			case 'add':
-				labelAssociations.upsert(association)
-				break
-			case 'remove':
-				labelAssociations.delete(association)
-				break
-			default:
-				console.error(`unknown operation type [${type}]`)
+				case 'add':
+					labelAssociations.upsert(association)
+					break
+				case 'remove':
+					labelAssociations.delete(association)
+					break
+				default:
+					console.error(`unknown operation type [${type}]`)
 			}
 		})
-
 		ev.on('presence.update', ({ id, presences: update }) => {
 			presences[id] = presences[id] || {}
 			Object.assign(presences[id], update)
 		})
 		ev.on('chats.delete', deletions => {
 			for(const item of deletions) {
-				if(chats.get(item)) {
-					chats.deleteById(item)
-				}
+				chats.deleteById(item)
 			}
 		})
 		ev.on('messages.upsert', ({ messages: newMessages, type }) => {
 			switch (type) {
 			case 'append':
 			case 'notify':
-				for(const msg of newMessages) {
+				for (const msg of newMessages) {
 					const jid = jidNormalizedUser(msg.key.remoteJid!)
 					const list = assertMessageList(jid)
 					list.upsert(msg, 'append')
-
-					if(type === 'notify' && !chats.get(jid)) {
-						ev.emit('chats.upsert', [
-							{
-								id: jid,
-								conversationTimestamp: toNumber(msg.messageTimestamp),
-								unreadCount: 1
-							}
-						])
+					if (type === 'notify') {
+						if (!chats.get(jid)) {
+							ev.emit('chats.upsert', [
+								{
+									id: jid,
+									conversationTimestamp: toNumber(msg.messageTimestamp),
+									unreadCount: 1
+								}
+							])
+						}
 					}
 				}
 
@@ -250,7 +254,6 @@ export default (config: BaileysInMemoryStoreConfig) => {
 						logger.debug({ update }, 'new update object')
 					}
 				}
-
 				const result = list.updateAssign(key.id!, update)
 				if(!result) {
 					logger.debug({ update }, 'got update for non-existent message')
@@ -291,8 +294,8 @@ export default (config: BaileysInMemoryStoreConfig) => {
 					break
 				case 'demote':
 				case 'promote':
-					for(const participant of metadata.participants) {
-						if(participants.includes(participant.id)) {
+					for (const participant of metadata.participants) {
+						if (participants.includes(participant.id)) {
 							participant.isAdmin = action === 'promote'
 						}
 					}
@@ -334,7 +337,13 @@ export default (config: BaileysInMemoryStoreConfig) => {
 		labelAssociations
 	})
 
-	const fromJSON = (json: {chats: Chat[], contacts: { [id: string]: Contact }, messages: { [id: string]: WAMessage[] }, labels: { [labelId: string]: Label }, labelAssociations: LabelAssociation[]}) => {
+	const fromJSON = (json: {
+		chats: Chat[],
+		contacts: { [id: string]: Contact },
+		messages: { [id: string]: WAMessage[] },
+		labels: { [labelId: string]: Label },
+		labelAssociations: LabelAssociation[]
+	}) => {
 		chats.upsert(...json.chats)
 		labelAssociations.upsert(...json.labelAssociations || [])
 		contactsUpsert(Object.values(json.contacts))
@@ -393,7 +402,6 @@ export default (config: BaileysInMemoryStoreConfig) => {
 		getLabels: () => {
 			return labels
 		},
-
 		/**
 		 * Get labels for chat
 		 *
@@ -402,7 +410,6 @@ export default (config: BaileysInMemoryStoreConfig) => {
 		getChatLabels: (chatId: string) => {
 			return labelAssociations.filter((la) => la.chatId === chatId).all()
 		},
-
 		/**
 		 * Get labels for message
 		 *
@@ -412,12 +419,10 @@ export default (config: BaileysInMemoryStoreConfig) => {
 			const associations = labelAssociations
 				.filter((la: MessageLabelAssociation) => la.messageId === messageId)
 				.all()
-
 			return associations.map(({ labelId }) => labelId)
-
 		},
-		loadMessage: async(jid: string, id: string) => messages[jid]?.get(id),
-		mostRecentMessage: async(jid: string) => {
+		loadMessage: async (jid: string, id: string) => messages[jid]?.get(id),
+		mostRecentMessage: async (jid: string) => {
 			const message: WAMessage | undefined = messages[jid]?.array.slice(-1)[0]
 			return message
 		},

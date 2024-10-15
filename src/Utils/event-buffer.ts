@@ -2,7 +2,7 @@ import EventEmitter from 'events'
 import { Logger } from 'pino'
 import { proto } from '../../WAProto'
 import { BaileysEvent, BaileysEventEmitter, BaileysEventMap, BufferedEventData, Chat, ChatUpdate, Contact, WAMessage, WAMessageStatus } from '../Types'
-import { trimUndefined } from './generics'
+import { trimUndefineds } from './generics'
 import { updateMessageWithReaction, updateMessageWithReceipt } from './messages'
 import { isRealMessage, shouldIncrementChatUnread } from './process-message'
 
@@ -209,7 +209,7 @@ function append<E extends BufferableEvent>(
 		for(const contact of eventData.contacts as Contact[]) {
 			const existingContact = data.historySets.contacts[contact.id]
 			if(existingContact) {
-				Object.assign(existingContact, trimUndefined(contact))
+				Object.assign(existingContact, trimUndefineds(contact))
 			} else {
 				const historyContactId = `c:${contact.id}`
 				const hasAnyName = contact.notify || contact.name || contact.verifiedName
@@ -230,9 +230,6 @@ function append<E extends BufferableEvent>(
 		}
 
 		data.historySets.empty = false
-		data.historySets.syncType = eventData.syncType
-		data.historySets.progress = eventData.progress
-		data.historySets.peerDataRequestSessionId = eventData.peerDataRequestSessionId
 		data.historySets.isLatest = eventData.isLatest || data.historySets.isLatest
 
 		break
@@ -324,14 +321,14 @@ function append<E extends BufferableEvent>(
 			}
 
 			if(upsert) {
-				upsert = Object.assign(upsert, trimUndefined(contact))
+				upsert = Object.assign(upsert, trimUndefineds(contact))
 			} else {
 				upsert = contact
 				data.contactUpserts[contact.id] = upsert
 			}
 
 			if(data.contactUpdates[contact.id]) {
-				upsert = Object.assign(data.contactUpdates[contact.id], trimUndefined(contact))
+				upsert = Object.assign(data.contactUpdates[contact.id], trimUndefineds(contact))
 				delete data.contactUpdates[contact.id]
 			}
 		}
@@ -524,10 +521,7 @@ function consolidateEvents(data: BufferedEventData) {
 			chats: Object.values(data.historySets.chats),
 			messages: Object.values(data.historySets.messages),
 			contacts: Object.values(data.historySets.contacts),
-			syncType: data.historySets.syncType,
-			progress: data.historySets.progress,
-			isLatest: data.historySets.isLatest,
-			peerDataRequestSessionId: data.historySets.peerDataRequestSessionId
+			isLatest: data.historySets.isLatest
 		}
 	}
 
@@ -598,10 +592,12 @@ function consolidateEvents(data: BufferedEventData) {
 }
 
 function concatChats<C extends Partial<Chat>>(a: C, b: Partial<Chat>) {
-	if(b.unreadCount === null && // neutralize unread counter
-		a.unreadCount! < 0) {
-		a.unreadCount = undefined
-		b.unreadCount = undefined
+	if(b.unreadCount === null) {
+		// neutralize unread counter
+		if(a.unreadCount! < 0) {
+			a.unreadCount = undefined
+			b.unreadCount = undefined
+		}
 	}
 
 	if(typeof a.unreadCount === 'number' && typeof b.unreadCount === 'number') {

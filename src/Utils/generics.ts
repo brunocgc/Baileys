@@ -5,31 +5,23 @@ import { platform, release } from 'os'
 import { Logger } from 'pino'
 import { proto } from '../../WAProto'
 import { version as baileysVersion } from '../Defaults/baileys-version.json'
-import { BaileysEventEmitter, BaileysEventMap, BrowsersMap, DisconnectReason, WACallUpdateType, WAVersion } from '../Types'
+import { BaileysEventEmitter, BaileysEventMap, DisconnectReason, WACallUpdateType, WAVersion } from '../Types'
 import { BinaryNode, getAllBinaryNodeChildren, jidDecode } from '../WABinary'
 
 const PLATFORM_MAP = {
 	'aix': 'AIX',
 	'darwin': 'Mac OS',
 	'win32': 'Windows',
-	'android': 'Android',
-	'freebsd': 'FreeBSD',
-	'openbsd': 'OpenBSD',
-	'sunos': 'Solaris'
+	'android': 'Android'
 }
 
-export const Browsers: BrowsersMap = {
-	ubuntu: (browser) => ['Ubuntu', browser, '22.04.4'],
-	macOS: (browser) => ['Mac OS', browser, '14.4.1'],
-	baileys: (browser) => ['Baileys', browser, '6.5.0'],
+export const Browsers = {
+	ubuntu: browser => ['Ubuntu', browser, '20.0.04'] as [string, string, string],
+	macOS: browser => ['Mac OS', browser, '10.15.7'] as [string, string, string],
+	baileys: browser => ['Baileys', browser, '4.0.0'] as [string, string, string],
 	windows: (browser) => ['Windows', browser, '10.0.22631'],
 	/** The appropriate browser based on your OS & release */
-	appropriate: (browser) => [ PLATFORM_MAP[platform()] || 'Ubuntu', browser, release() ]
-}
-
-export const getPlatformId = (browser: string) => {
-	const platformType = proto.DeviceProps.PlatformType[browser.toUpperCase()]
-	return platformType ? platformType.toString().charCodeAt(0).toString() : '49' //chrome
+	appropriate: browser => [ PLATFORM_MAP[platform()] || 'Ubuntu', browser, release() ] as [string, string, string]
 }
 
 export const BufferJSON = {
@@ -52,7 +44,7 @@ export const BufferJSON = {
 
 export const getKeyAuthor = (
 	key: proto.IMessageKey | undefined | null,
-	meId = 'me'
+	meId: string = 'me'
 ) => (
 	(key?.fromMe ? meId : key?.participant || key?.remoteJid) || ''
 )
@@ -109,7 +101,7 @@ export const unixTimestampSeconds = (date: Date = new Date()) => Math.floor(date
 
 export type DebouncedTimeout = ReturnType<typeof debouncedTimeout>
 
-export const debouncedTimeout = (intervalMs = 1000, task?: () => void) => {
+export const debouncedTimeout = (intervalMs: number = 1000, task?: () => void) => {
 	let timeout: NodeJS.Timeout | undefined
 	return {
 		start: (newIntervalMs?: number, newTask?: () => void) => {
@@ -180,27 +172,21 @@ export async function promiseTimeout<T>(ms: number | undefined, promise: (resolv
 
 // inspired from whatsmeow code
 // https://github.com/tulir/whatsmeow/blob/64bc969fbe78d31ae0dd443b8d4c80a5d026d07a/send.go#L42
-export const generateMessageIDV2 = (userId?: string): string => {
+export const generateMessageID = (userId?: string): string => {
 	const data = Buffer.alloc(8 + 20 + 16)
 	data.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 1000)))
-
-	if(userId) {
-		const id = jidDecode(userId)
-		if(id?.user) {
-			data.write(id.user, 8)
-			data.write('@c.us', 8 + id.user.length)
-		}
+	if (userId) {
+	  const id = jidDecode(userId)
+	  if (id?.user) {
+		  data.write(id.user, 8)
+		  data.write('@c.us', 8 + id.user.length)
+	  }
 	}
-
 	const random = randomBytes(16)
 	random.copy(data, 28)
-
 	const hash = createHash('sha256').update(data).digest()
 	return '3EB0' + hash.toString('hex').toUpperCase().substring(0, 18)
-}
-
-// generate a random ID to attach to a message
-export const generateMessageID = () => '3EB0' + randomBytes(18).toString('hex').toUpperCase()
+  }
 
 export function bindWaitForEvent<T extends keyof BaileysEventMap>(ev: BaileysEventEmitter, event: T) {
 	return async(check: (u: BaileysEventMap[T]) => boolean | undefined, timeoutMs?: number) => {
@@ -364,8 +350,7 @@ export const getCallStatusFromNode = ({ tag, attrs }: BinaryNode) => {
 		if(attrs.reason === 'timeout') {
 			status = 'timeout'
 		} else {
-			//fired when accepted/rejected/timeout/caller hangs up
-			status = 'terminate'
+			status = 'reject'
 		}
 
 		break
@@ -387,13 +372,13 @@ const UNEXPECTED_SERVER_CODE_TEXT = 'Unexpected server response: '
 
 export const getCodeFromWSError = (error: Error) => {
 	let statusCode = 500
-	if(error?.message?.includes(UNEXPECTED_SERVER_CODE_TEXT)) {
-		const code = +error?.message.slice(UNEXPECTED_SERVER_CODE_TEXT.length)
+	if(error.message.includes(UNEXPECTED_SERVER_CODE_TEXT)) {
+		const code = +error.message.slice(UNEXPECTED_SERVER_CODE_TEXT.length)
 		if(!Number.isNaN(code) && code >= 400) {
 			statusCode = code
 		}
 	} else if(
-		(error as any)?.code?.startsWith('E')
+		(error as any).code?.startsWith('E')
 		|| error?.message?.includes('timed out')
 	) { // handle ETIMEOUT, ENOTFOUND etc
 		statusCode = 408
@@ -410,7 +395,7 @@ export const isWABusinessPlatform = (platform: string) => {
 	return platform === 'smbi' || platform === 'smba'
 }
 
-export function trimUndefined(obj: any) {
+export function trimUndefineds(obj: any) {
 	for(const key in obj) {
 		if(typeof obj[key] === 'undefined') {
 			delete obj[key]
@@ -418,28 +403,4 @@ export function trimUndefined(obj: any) {
 	}
 
 	return obj
-}
-
-const CROCKFORD_CHARACTERS = '123456789ABCDEFGHJKLMNPQRSTVWXYZ'
-
-export function bytesToCrockford(buffer: Buffer): string {
-	let value = 0
-	let bitCount = 0
-	const crockford: string[] = []
-
-	for(const element of buffer) {
-		value = (value << 8) | (element & 0xff)
-		bitCount += 8
-
-		while(bitCount >= 5) {
-			crockford.push(CROCKFORD_CHARACTERS.charAt((value >>> (bitCount - 5)) & 31))
-			bitCount -= 5
-		}
-	}
-
-	if(bitCount > 0) {
-		crockford.push(CROCKFORD_CHARACTERS.charAt((value << (5 - bitCount)) & 31))
-	}
-
-	return crockford.join('')
 }

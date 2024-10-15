@@ -1,5 +1,5 @@
 import { Boom } from '@hapi/boom'
-import axios, { AxiosRequestConfig } from 'axios'
+import { AxiosRequestConfig } from 'axios'
 import { exec } from 'child_process'
 import * as Crypto from 'crypto'
 import { once } from 'events'
@@ -15,7 +15,7 @@ import { DEFAULT_ORIGIN, MEDIA_HKDF_KEY_MAPPING, MEDIA_PATH_MAP } from '../Defau
 import { BaileysEventMap, DownloadableMessage, MediaConnInfo, MediaDecryptionKeyInfo, MediaType, MessageType, SocketConfig, WAGenericMediaMessage, WAMediaUpload, WAMediaUploadFunction, WAMessageContent } from '../Types'
 import { BinaryNode, getBinaryNodeChild, getBinaryNodeChildBuffer, jidNormalizedUser } from '../WABinary'
 import { aesDecryptGCM, aesEncryptGCM, hkdf } from './crypto'
-import { generateMessageIDV2 } from './generics'
+import { generateMessageID } from './generics'
 
 const getTmpFilesDirectory = () => tmpdir()
 
@@ -79,7 +79,7 @@ const extractVideoThumb = async(
 	destPath: string,
 	time: string,
 	size: { width: number, height: number },
-) => new Promise<void>((resolve, reject) => {
+) => new Promise((resolve, reject) => {
     	const cmd = `ffmpeg -ss ${time} -i ${path} -y -vf scale=${size.width}:-1 -vframes 1 -f image2 ${destPath}`
     	exec(cmd, (err) => {
     		if(err) {
@@ -88,7 +88,7 @@ const extractVideoThumb = async(
 			resolve()
 		}
     	})
-})
+}) as Promise<void>
 
 export const extractImageThumb = async(bufferOrFilePath: Readable | Buffer | string, width = 32) => {
 	if(bufferOrFilePath instanceof Readable) {
@@ -97,7 +97,7 @@ export const extractImageThumb = async(bufferOrFilePath: Readable | Buffer | str
 
 	const lib = await getImageProcessingLibrary()
 	if('sharp' in lib && typeof lib.sharp?.default === 'function') {
-		const img = lib.sharp.default(bufferOrFilePath)
+		const img = lib.sharp!.default(bufferOrFilePath)
 		const dimensions = await img.metadata()
 
 		const buffer = await img
@@ -154,7 +154,7 @@ export const generateProfilePicture = async(mediaUpload: WAMediaUpload) => {
 	const lib = await getImageProcessingLibrary()
 	let img: Promise<Buffer>
 	if('sharp' in lib && typeof lib.sharp?.default === 'function') {
-		img = lib.sharp.default(bufferOrFilePath)
+		img = lib.sharp!.default(bufferOrFilePath)
 			.resize(640, 640)
 			.jpeg({
 				quality: 50,
@@ -204,10 +204,10 @@ export async function getAudioDuration(buffer: Buffer | string | Readable) {
 	return metadata.format.duration
 }
 
-/**
+	/**
   referenced from and modifying https://github.com/wppconnect-team/wa-js/blob/main/src/chat/functions/prepareAudioWaveform.ts
  */
-export async function getAudioWaveform(buffer: Buffer | string | Readable, logger?: Logger) {
+  export async function getAudioWaveform(buffer: Buffer | string | Readable, logger?: Logger) {
 	try {
 		const audioDecode = (buffer: Buffer | ArrayBuffer | Uint8Array) => import('audio-decode').then(({ default: audioDecode }) => audioDecode(buffer))
 		let audioData: Buffer
@@ -250,7 +250,6 @@ export async function getAudioWaveform(buffer: Buffer | string | Readable, logge
 		logger?.debug('Failed to generate waveform: ' + e)
 	}
 }
-
 
 export const toReadable = (buffer: Buffer) => {
 	const readable = new Readable({ read: () => {} })
@@ -305,7 +304,7 @@ export async function generateThumbnail(
 			}
 		}
 	} else if(mediaType === 'video') {
-		const imgFilename = join(getTmpFilesDirectory(), generateMessageIDV2() + '.jpg')
+		const imgFilename = join(getTmpFilesDirectory(), generateMessageID() + '.jpg')
 		try {
 			await extractVideoThumb(file, imgFilename, '00:00:00', { width: 32, height: 32 })
 			const buff = await fs.readFile(imgFilename)
@@ -324,6 +323,7 @@ export async function generateThumbnail(
 }
 
 export const getHttpStream = async(url: string | URL, options: AxiosRequestConfig & { isStream?: true } = {}) => {
+	const { default: axios } = await import('axios')
 	const fetched = await axios.get(url.toString(), { ...options, responseType: 'stream' })
 	return fetched.data as Readable
 }
@@ -353,7 +353,7 @@ export const encryptedStream = async(
 	if(type === 'file') {
 		bodyPath = (media as any).url
 	} else if(saveOriginalFileIfRequired) {
-		bodyPath = join(getTmpFilesDirectory(), mediaType + generateMessageIDV2())
+		bodyPath = join(getTmpFilesDirectory(), mediaType + generateMessageID())
 		writeStream = createWriteStream(bodyPath)
 		didSaveToTmpPath = true
 	}
@@ -382,8 +382,10 @@ export const encryptedStream = async(
 			}
 
 			sha256Plain = sha256Plain.update(data)
-			if(writeStream && !writeStream.write(data)) {
-				await once(writeStream, 'drain')
+			if(writeStream) {
+				if(!writeStream.write(data)) {
+					await once(writeStream, 'drain')
+				}
 			}
 
 			onChunk(aes.update(data))
@@ -499,9 +501,9 @@ export const downloadEncryptedContent = async(
 		Origin: DEFAULT_ORIGIN,
 	}
 	if(startChunk || endChunk) {
-		headers.Range = `bytes=${startChunk}-`
+		headers!.Range = `bytes=${startChunk}-`
 		if(endChunk) {
-			headers.Range += endChunk
+			headers!.Range += endChunk
 		}
 	}
 
@@ -599,25 +601,35 @@ export const getWAUploadToServer = (
 	refreshMediaConn: (force: boolean) => Promise<MediaConnInfo>,
 ): WAMediaUploadFunction => {
 	return async(stream, { mediaType, fileEncSha256B64, timeoutMs }) => {
+		const { default: axios } = await import('axios')
 		// send a query JSON to obtain the url & auth token to upload our media
 		let uploadInfo = await refreshMediaConn(false)
 
 		let urls: { mediaUrl: string, directPath: string } | undefined
 		const hosts = [ ...customUploadHosts, ...uploadInfo.hosts ]
 
+		const chunks: Buffer[] = []
+		for await (const chunk of stream) {
+			chunks.push(chunk)
+		}
+
+		const reqBody = Buffer.concat(chunks)
 		fileEncSha256B64 = encodeBase64EncodedStringForUpload(fileEncSha256B64)
 
-		for(const { hostname } of hosts) {
+		for(const { hostname, maxContentLengthBytes } of hosts) {
 			logger.debug(`uploading to "${hostname}"`)
 
 			const auth = encodeURIComponent(uploadInfo.auth) // the auth token
 			const url = `https://${hostname}${MEDIA_PATH_MAP[mediaType]}/${fileEncSha256B64}?auth=${auth}&token=${fileEncSha256B64}`
 			let result: any
 			try {
+				if(maxContentLengthBytes && reqBody.length > maxContentLengthBytes) {
+					throw new Boom(`Body too large for "${hostname}"`, { statusCode: 413 })
+				}
 
 				const body = await axios.post(
 					url,
-					stream,
+					reqBody,
 					{
 						...options,
 						headers: {
@@ -769,8 +781,3 @@ const MEDIA_RETRY_STATUS_MAP = {
 	[proto.MediaRetryNotification.ResultType.NOT_FOUND]: 404,
 	[proto.MediaRetryNotification.ResultType.GENERAL_ERROR]: 418,
 } as const
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function __importStar(arg0: any): any {
-	throw new Error('Function not implemented.')
-}

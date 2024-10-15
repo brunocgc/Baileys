@@ -1,9 +1,14 @@
 name: Update WAProto
 
 on:
+  push:
+    branches:
+      - '*'
+  pull_request:
+    branches:
+      - '*'
   schedule:
-    - cron: "10 1 * * *"
-  workflow_dispatch:
+    - cron: "0 7 * * *"
 
 permissions:
   contents: write
@@ -15,45 +20,77 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
 
-      - name: Install Node
+      - name: Setup GIT
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Setup Node
         uses: actions/setup-node@v3
         with:
-          node-version: 20.x
+          node-version: 18.x
 
-      - name: Install packages
+      - name: Get npm cache directory
+        id: npm-cache
         run: |
-          yarn
-          yarn --pure-lockfile --cwd proto-extract
+            echo "dir=$(npm config get cache)" >> $GITHUB_OUTPUT
 
-      - name: Update WAProto.proto
+      - name: Setup npm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install Dependencies
+        run: npm install
+        working-directory: ./proto-extract
+
+      - name: Check update WAProto.proto
         id: wa_proto_info
-        run: |
-          yarn --cwd proto-extract start > wa-logs.txt
-          WA_VERSION=$(cat wa-logs.txt | perl -n -e'/Current version\: (.+)/ && print $1')
-          WA_JS_URL=$(cat wa-logs.txt | perl -n -e'/Found source JS URL\: (.+)/ && print $1')
-          echo "wa_version=$WA_VERSION" >> $GITHUB_OUTPUT
-          echo "wa_js_url=$WA_JS_URL" >> $GITHUB_OUTPUT
+        run: npm run build
+        env:
+          WA_COMMIT: true
+        working-directory: ./proto-extract
 
-      - name: GenerateStatics
-        run: yarn gen:protobuf
-
-      - name: Update baileys-version.json
+      - name: Check for Changes
+        id: check_changes
         run: |
-          WA_VERSION="${{steps.wa_proto_info.outputs.wa_version}}"
-          WA_NUMBERS=$(echo $WA_VERSION | sed "s/\./, /g")
-          echo -e "{\n\t\"version\": [$WA_NUMBERS]\n}" > src/Defaults/baileys-version.json
+          CHANGED_LINES=$(git diff --stat | tail -n1 | awk '{print $1}')
+          if [ -z "$CHANGED_LINES" ] || [ "$CHANGED_LINES" -le 1 ]; then
+            echo "::set-output name=result::no_changes"
+          else
+            echo "::set-output name=result::changes_detected"
+          fi
+
+      - name: Create New Branch
+        if: steps.check_changes.outputs.result == 'changes_detected'
+        run: |
+          BRANCH_NAME="update-waproto-$(date +'%Y%m%d%H%M%S')"
+          git checkout -b "$BRANCH_NAME"
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_ENV
+
+      - name: Commit Changes
+        if: steps.check_changes.outputs.result == 'changes_detected'
+        run: |
+          git add .
+          git commit -m "Update WAProto.proto"
+
+      - name: Push New Branch
+        if: steps.check_changes.outputs.result == 'changes_detected'
+        run: |
+          git push origin ${{ env.branch_name }}
 
       - name: Create Pull Request
+        if: steps.check_changes.outputs.result == 'changes_detected'
         uses: peter-evans/create-pull-request@v5
         with:
-          commit-message: "chore: updated proto/version to v${{steps.wa_proto_info.outputs.wa_version}}"
-          title: "Whatsapp v${{steps.wa_proto_info.outputs.wa_version}} proto/version change"
-          branch: "update-proto/stable"
-          delete-branch: true
-          labels: "update-proto"
-          body: "Automated changes\nFound source JS URL: ${{steps.wa_proto_info.outputs.wa_js_url}}\nCurrent version: v${{steps.wa_proto_info.outputs.wa_version}}"
-          add-paths: |
-            WAProto/*
-            src/Defaults/baileys-version.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ env.branch_name }}
+          title: "Update WAProto.proto"
+          body: "This PR contains updates to WAProto.proto."
+          base: main
