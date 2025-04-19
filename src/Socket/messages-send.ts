@@ -6,7 +6,7 @@ import { Boom } from '@hapi/boom'
 import { proto } from '../../WAProto'
 import { DEFAULT_CACHE_TTLS, WA_DEFAULT_EPHEMERAL } from '../Defaults'
 import { AnyMessageContent, MediaConnInfo, MessageReceiptType, MessageRelayOptions, MiscMessageGenerationOptions, SocketConfig, WAMessageKey } from '../Types'
-import { aggregateMessageKeysNotFromMe, assertMediaContent, bindWaitForEvent, decryptMediaRetryData, encodeSignedDeviceIdentity, encodeWAMessage, encryptMediaRetryRequest, extractDeviceJids, generateMessageIDV2, generateWAMessage, getContentType, getStatusCodeForMediaRetry, getUrlFromDirectPath, getWAUploadToServer, normalizeMessageContent, parseAndInjectE2ESessions, unixTimestampSeconds } from '../Utils'
+import { aggregateMessageKeysNotFromMe, assertMediaContent, bindWaitForEvent, createButtonsMessage, createHydratedCallButton, createHydratedQuickReplyButton, createHydratedTemplateMessage, createHydratedUrlButton, createInteractiveMessage, createListMessage, decryptMediaRetryData, encodeSignedDeviceIdentity, encodeWAMessage, encryptMediaRetryRequest, extractDeviceJids, generateMessageIDV2, generateWAMessage, generateWAMessageFromContent, getContentType, getStatusCodeForMediaRetry, getUrlFromDirectPath, getWAUploadToServer, normalizeMessageContent, parseAndInjectE2ESessions, unixTimestampSeconds } from '../Utils'
 import { getUrlInfo } from '../Utils/link-preview'
 import { areJidsSameUser, BinaryNode, BinaryNodeAttributes, getBinaryNodeChild, getBinaryNodeChildren, isJidGroup, isJidUser, jidDecode, jidEncode, jidNormalizedUser, JidWithDevice, S_WHATSAPP_NET } from '../WABinary'
 import { USyncQuery, USyncUser } from '../WAUSync'
@@ -777,6 +777,216 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 
 			return message
 		},
+		/**
+		 * Envia qualquer tipo de mensagem usando generateWAMessageFromContent
+		 * @param jid Destinatário da mensagem
+		 * @param message Mensagem proto.IMessage para enviar
+		 * @param options Opções adicionais para a mensagem
+		 *
+		 * @example
+		 * // Enviar uma mensagem de botões
+		 * const buttonsMessage = createButtonsMessage(
+		 *   'Escolha uma opção:',
+		 *   [
+		 *     { buttonId: 'id1', buttonText: 'Opção 1' },
+		 *     { buttonId: 'id2', buttonText: 'Opção 2' }
+		 *   ],
+		 *   'Rodapé da mensagem'
+		 * )
+		 * await sock.sendMessageFromContent(jid, buttonsMessage)
+		 *
+		 * // Enviar uma mensagem de lista
+		 * const sections = [
+		 *   {
+		 *     title: 'Seção 1',
+		 *     rows: [
+		 *       { rowId: 'row1', title: 'Item 1', description: 'Descrição do item 1' },
+		 *       { rowId: 'row2', title: 'Item 2', description: 'Descrição do item 2' }
+		 *     ]
+		 *   }
+		 * ]
+		 * const listMessage = createListMessage(
+		 *   'Título',
+		 *   'Escolha um item da lista:',
+		 *   'Ver Lista',
+		 *   sections,
+		 *   'Rodapé da mensagem'
+		 * )
+		 * await sock.sendMessageFromContent(jid, listMessage)
+		 *
+		 * // Enviar uma mensagem de template hidratada
+		 * const templateMessage = createHydratedTemplateMessage(
+		 *   'Texto principal da mensagem',
+		 *   [
+		 *     createHydratedUrlButton('Visitar site', 'https://exemplo.com'),
+		 *     createHydratedCallButton('Ligar', '+123456789'),
+		 *     createHydratedQuickReplyButton('Resposta rápida', 'id1')
+		 *   ],
+		 *   'Rodapé da mensagem',
+		 *   { text: 'Título do template' }
+		 * )
+		 * await sock.sendMessageFromContent(jid, templateMessage)
+		 *
+		 * // Enviar uma mensagem interativa
+		 * const nativeFlowMessage = createInteractiveMessage(
+		 *   'Texto da mensagem interativa',
+		 *   'nativeFlow',
+		 *   {
+		 *     buttons: [
+		 *       { name: 'btn1', buttonParamsJson: JSON.stringify({ id: 'button1' }) }
+		 *     ]
+		 *   },
+		 *   'Rodapé da mensagem',
+		 *   { text: 'Título da mensagem' }
+		 * )
+		 * await sock.sendMessageFromContent(jid, nativeFlowMessage)
+		 */
+		sendMessageFromContent: async(
+			jid: string,
+			message: proto.IMessage,
+			options: MiscMessageGenerationOptions = {}
+		) => {
+			const userJid = authState.creds.me!.id
+
+			const fullMsg = generateWAMessageFromContent(
+				jid,
+				message,
+				{
+					userJid,
+					messageId: generateMessageIDV2(sock.user?.id),
+					...options,
+				}
+			)
+
+			const isDeleteMsg = 'protocolMessage' in message && message.protocolMessage?.type === proto.Message.ProtocolMessage.Type.REVOKE
+			const isEditMsg = 'protocolMessage' in message && message.protocolMessage?.type === proto.Message.ProtocolMessage.Type.MESSAGE_EDIT
+			const isPollMessage = 'pollCreationMessage' in message || 'pollCreationMessageV2' in message || 'pollCreationMessageV3' in message
+
+			const additionalAttributes: BinaryNodeAttributes = {}
+			const additionalNodes: BinaryNode[] = []
+
+			if(isDeleteMsg) {
+				if(isJidGroup(fullMsg.key.remoteJid as string) && !fullMsg.key.fromMe) {
+					additionalAttributes.edit = '8'
+				} else {
+					additionalAttributes.edit = '7'
+				}
+			} else if(isEditMsg) {
+				additionalAttributes.edit = '1'
+			} else if(isPollMessage) {
+				additionalNodes.push({
+					tag: 'meta',
+					attrs: {
+						polltype: 'creation'
+					},
+				} as BinaryNode)
+			}
+
+			await relayMessage(
+				jid,
+				fullMsg.message!,
+				{
+					messageId: fullMsg.key.id!,
+					useCachedGroupMetadata: options.useCachedGroupMetadata,
+					additionalAttributes,
+					statusJidList: options.statusJidList,
+					additionalNodes
+				}
+			)
+
+			// Tratamento especial para listMessage - criando um fallback para dispositivos antigos
+			if(getContentType(fullMsg.message!) === 'listMessage') {
+				try {
+					// Envia viewOnceMessageV2 como alternativa para listMessage
+					await relayMessage(
+						jid,
+						{ viewOnceMessageV2: { message: fullMsg.message! } },
+						{
+							messageId: fullMsg.key.id!,
+							useCachedGroupMetadata: options.useCachedGroupMetadata,
+							additionalAttributes,
+							statusJidList: options.statusJidList,
+							additionalNodes
+						}
+					)
+
+					// Envia também como texto para garantir compatibilidade
+					let text = `${fullMsg.message?.listMessage?.description || ''}\n\n`
+					fullMsg.message?.listMessage?.sections?.forEach(section => {
+						if(section.title) {
+							text += `${section.title}\n`
+						}
+						section.rows?.forEach(row => {
+							text += `• ${row.title}${row.description ? `: ${row.description}` : ''}\n`
+						})
+						text += '\n'
+					})
+
+					const message = {
+						extendedTextMessage: {
+							text: text.trim()
+						}
+					}
+					await relayMessage(
+						jid,
+						message,
+						{
+							messageId: fullMsg.key.id!,
+							useCachedGroupMetadata: options.useCachedGroupMetadata,
+							additionalAttributes,
+							statusJidList: options.statusJidList,
+							additionalNodes
+						}
+					)
+				} catch(err) {
+					logger.error(err)
+				}
+			}
+
+			// Tratamento especial para buttonsMessage
+			if(getContentType(fullMsg.message!) === 'buttonsMessage') {
+				try {
+					// Envia text como fallback para buttonsMessage
+					let text = `${fullMsg.message?.buttonsMessage?.contentText || ''}\n\n`
+					if(fullMsg.message?.buttonsMessage?.headerType === proto.Message.ButtonsMessage.HeaderType.DOCUMENT &&
+					   fullMsg.message?.buttonsMessage?.documentMessage?.title) {
+						text = `${fullMsg.message.buttonsMessage.documentMessage.title}\n\n${text}`
+					}
+
+					fullMsg.message?.buttonsMessage?.buttons?.forEach((btn, i) => {
+						text += `${i+1}. ${btn.buttonText?.displayText || 'Botão'}\n`
+					})
+
+					const message = {
+						extendedTextMessage: {
+							text: text.trim()
+						}
+					}
+					await relayMessage(
+						jid,
+						message,
+						{
+							messageId: fullMsg.key.id!,
+							useCachedGroupMetadata: options.useCachedGroupMetadata,
+							additionalAttributes,
+							statusJidList: options.statusJidList
+						}
+					)
+				} catch(err) {
+					logger.error(err)
+				}
+			}
+
+			if(config.emitOwnEvents) {
+				process.nextTick(() => {
+					processingMutex.mutex(() => (
+						upsertMessage(fullMsg, 'append')
+					))
+				})
+			}
+
+			return fullMsg
+		},
 		sendMessage: async(
 			jid: string,
 			content: AnyMessageContent,
@@ -826,7 +1036,6 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 				)
 				const isDeleteMsg = 'delete' in content && !!content.delete
 				const isEditMsg = 'edit' in content && !!content.edit
-				const isPinMsg = 'pin' in content && !!content.pin
 				const isPollMessage = 'poll' in content && !!content.poll
 				const additionalAttributes: BinaryNodeAttributes = {}
 				const additionalNodes: BinaryNode[] = []
@@ -840,8 +1049,6 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					}
 				} else if(isEditMsg) {
 					additionalAttributes.edit = '1'
-				} else if(isPinMsg) {
-					additionalAttributes.edit = '2'
 				} else if(isPollMessage) {
 					additionalNodes.push({
 						tag: 'meta',

@@ -983,6 +983,10 @@ export const downloadMediaMessage = async<Type extends 'buffer' | 'stream'>(
 /** Checks whether the given message is a media message; if it is returns the inner content */
 export const assertMediaContent = (content: proto.IMessage | null | undefined) => {
 	content = extractMessageContent(content)
+	if(!content) {
+		throw new Boom('no content in message', { statusCode: 404 })
+	}
+
 	const mediaContent = content?.documentMessage
 		|| content?.imageMessage
 		|| content?.videoMessage
@@ -996,4 +1000,240 @@ export const assertMediaContent = (content: proto.IMessage | null | undefined) =
 	}
 
 	return mediaContent
+}
+
+/**
+ * Cria um objeto de botões para enviar usando generateWAMessageFromContent
+ * @param buttonText Texto principal da mensagem
+ * @param footerText Texto de rodapé (opcional)
+ * @param buttons Array de botões a serem mostrados
+ * @param headerType Tipo de cabeçalho (texto, documento, imagem, vídeo)
+ * @param headerContent Conteúdo do cabeçalho para tipos que não são texto
+ */
+export const createButtonsMessage = (
+	buttonText: string,
+	buttons: { buttonId: string, buttonText: string, type?: number }[],
+	footerText?: string,
+	headerType?: proto.Message.ButtonsMessage.HeaderType,
+	headerContent?: any
+): proto.IMessage => {
+	// Transformar buttons no formato esperado pelo proto
+	const formattedButtons = buttons.map(button => ({
+		buttonId: button.buttonId,
+		buttonText: {
+			displayText: button.buttonText
+		},
+		type: button.type || 1
+	}))
+
+	const buttonsMessage = {
+		contentText: buttonText,
+		footerText: footerText,
+		buttons: formattedButtons,
+		headerType: headerType || proto.Message.ButtonsMessage.HeaderType.EMPTY
+	} as any
+
+	// Adicionar o conteúdo do cabeçalho com base no tipo
+	if(headerContent) {
+		if(headerType === proto.Message.ButtonsMessage.HeaderType.DOCUMENT) {
+			buttonsMessage.documentMessage = headerContent
+		} else if(headerType === proto.Message.ButtonsMessage.HeaderType.IMAGE) {
+			buttonsMessage.imageMessage = headerContent
+		} else if(headerType === proto.Message.ButtonsMessage.HeaderType.VIDEO) {
+			buttonsMessage.videoMessage = headerContent
+		} else if(headerType === proto.Message.ButtonsMessage.HeaderType.LOCATION) {
+			buttonsMessage.locationMessage = headerContent
+		}
+	}
+
+	return {
+		buttonsMessage
+	}
+}
+
+/**
+ * Cria um objeto de lista para enviar usando generateWAMessageFromContent
+ * @param title Título da lista
+ * @param description Descrição da lista
+ * @param buttonText Texto do botão
+ * @param footer Rodapé da mensagem (opcional)
+ * @param sections Seções da lista
+ */
+export const createListMessage = (
+	title: string,
+	description: string,
+	buttonText: string,
+	sections: proto.Message.ListMessage.ISection[],
+	footer?: string,
+	listType?: proto.Message.ListMessage.ListType
+): proto.IMessage => {
+	return {
+		listMessage: {
+			title,
+			description,
+			buttonText,
+			footerText: footer,
+			listType: listType || proto.Message.ListMessage.ListType.SINGLE_SELECT,
+			sections
+		}
+	}
+}
+
+const MEDIA_CONTENT_TYPES = [
+	'imageMessage',
+	'videoMessage',
+	'audioMessage',
+	'stickerMessage',
+	'documentMessage',
+]
+
+/**
+ * Cria um objeto de mensagem interativa para enviar usando generateWAMessageFromContent
+ * @param body Corpo da mensagem
+ * @param footer Texto do rodapé (opcional)
+ * @param header Cabeçalho da mensagem (opcional)
+ * @param type Tipo de mensagem interativa ('nativeFlow', 'shop', 'collection', 'carousel')
+ * @param content Conteúdo específico do tipo da mensagem interativa
+ */
+export const createInteractiveMessage = (
+	body: string | { text: string },
+	type: 'nativeFlow' | 'shop' | 'collection' | 'carousel',
+	content: any,
+	footer?: string,
+	header?: { text?: string, image?: any, video?: any, document?: any }
+): proto.IMessage => {
+	// Criar o corpo da mensagem
+	const bodyContent = typeof body === 'string'
+		? { text: body }
+		: body;
+
+	// Criar o objeto de header, se fornecido
+	const headerContent = header ? {
+		header: {
+			text: header.text,
+			...(header.image ? { imageMessage: header.image } : {}),
+			...(header.video ? { videoMessage: header.video } : {}),
+			...(header.document ? { documentMessage: header.document } : {})
+		}
+	} : {};
+
+	// Criar o conteúdo específico do tipo
+	let typeContent = {};
+	if (type === 'nativeFlow') {
+		typeContent = { nativeFlowMessage: content };
+	} else if (type === 'shop') {
+		typeContent = { shopMessage: content };
+	} else if (type === 'collection') {
+		typeContent = { collectionMessage: content };
+	} else if (type === 'carousel') {
+		typeContent = { carouselMessage: content };
+	}
+
+	// Montar a mensagem interativa
+	return {
+		interactiveMessage: {
+			body: bodyContent,
+			...(footer ? { footer: { text: footer } } : {}),
+			...headerContent,
+			...typeContent
+		}
+	};
+}
+
+/**
+ * Cria um objeto de mensagem de template hidratado para enviar usando generateWAMessageFromContent
+ * @param text Texto do conteúdo
+ * @param footer Texto do rodapé (opcional)
+ * @param buttons Array de botões hidratados
+ * @param header Conteúdo do cabeçalho (opcional)
+ */
+export const createHydratedTemplateMessage = (
+	text: string,
+	buttons: Array<any>, // Array de botões hidratados (url, call ou quick reply)
+	footer?: string,
+	header?: { documentMessage?: any, imageMessage?: any, videoMessage?: any, locationMessage?: any, text?: string }
+): proto.IMessage => {
+	const hydratedTemplate: any = {
+		hydratedContentText: text,
+		hydratedButtons: buttons
+	}
+
+	if (footer) {
+		hydratedTemplate.hydratedFooterText = footer;
+	}
+
+	if (header) {
+		if (header.text) {
+			hydratedTemplate.hydratedTitleText = header.text;
+		}
+		if (header.documentMessage) {
+			hydratedTemplate.documentMessage = header.documentMessage;
+		}
+		if (header.imageMessage) {
+			hydratedTemplate.imageMessage = header.imageMessage;
+		}
+		if (header.videoMessage) {
+			hydratedTemplate.videoMessage = header.videoMessage;
+		}
+		if (header.locationMessage) {
+			hydratedTemplate.locationMessage = header.locationMessage;
+		}
+	}
+
+	return {
+		templateMessage: {
+			hydratedTemplate
+		}
+	}
+}
+
+/**
+ * Cria um botão hidratado de URL para usar em templates
+ * @param displayText Texto a ser exibido no botão
+ * @param url URL para o qual o botão redirecionará
+ */
+export const createHydratedUrlButton = (
+	displayText: string,
+	url: string
+): any => {
+	return {
+		urlButton: {
+			displayText,
+			url
+		}
+	}
+}
+
+/**
+ * Cria um botão hidratado de chamada para usar em templates
+ * @param displayText Texto a ser exibido no botão
+ * @param phoneNumber Número de telefone para chamar
+ */
+export const createHydratedCallButton = (
+	displayText: string,
+	phoneNumber: string
+): any => {
+	return {
+		callButton: {
+			displayText,
+			phoneNumber
+		}
+	}
+}
+
+/**
+ * Cria um botão hidratado de resposta rápida para usar em templates
+ * @param displayText Texto a ser exibido no botão
+ * @param id ID único para o botão
+ */
+export const createHydratedQuickReplyButton = (
+	displayText: string,
+	id: string
+): any => {
+	return {
+		quickReplyButton: {
+			displayText,
+			id
+		}
+	}
 }
