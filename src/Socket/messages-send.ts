@@ -6,7 +6,7 @@ import { Boom } from '@hapi/boom'
 import { proto } from '../../WAProto'
 import { DEFAULT_CACHE_TTLS, WA_DEFAULT_EPHEMERAL } from '../Defaults'
 import { AnyMessageContent, MediaConnInfo, MessageReceiptType, MessageRelayOptions, MiscMessageGenerationOptions, SocketConfig, WAMessageKey } from '../Types'
-import { aggregateMessageKeysNotFromMe, assertMediaContent, bindWaitForEvent, createButtonsMessage, createHydratedCallButton, createHydratedQuickReplyButton, createHydratedTemplateMessage, createHydratedUrlButton, createInteractiveMessage, createListMessage, decryptMediaRetryData, encodeSignedDeviceIdentity, encodeWAMessage, encryptMediaRetryRequest, extractDeviceJids, generateMessageIDV2, generateWAMessage, generateWAMessageFromContent, getContentType, getStatusCodeForMediaRetry, getUrlFromDirectPath, getWAUploadToServer, normalizeMessageContent, parseAndInjectE2ESessions, unixTimestampSeconds } from '../Utils'
+import { aggregateMessageKeysNotFromMe, assertMediaContent, bindWaitForEvent, createButtonsMessage, createHydratedCallButton, createHydratedQuickReplyButton, createHydratedTemplateMessage, createHydratedUrlButton, createInteractiveMessage, createListMessage, createTextMessageFallback, decryptMediaRetryData, encodeSignedDeviceIdentity, encodeWAMessage, encryptMediaRetryRequest, extractDeviceJids, generateMessageIDV2, generateWAMessage, generateWAMessageFromContent, getContentType, getStatusCodeForMediaRetry, getUrlFromDirectPath, getWAUploadToServer, normalizeMessageContent, parseAndInjectE2ESessions, unixTimestampSeconds } from '../Utils'
 import { getUrlInfo } from '../Utils/link-preview'
 import { areJidsSameUser, BinaryNode, BinaryNodeAttributes, getBinaryNodeChild, getBinaryNodeChildren, isJidGroup, isJidUser, jidDecode, jidEncode, jidNormalizedUser, JidWithDevice, S_WHATSAPP_NET } from '../WABinary'
 import { USyncQuery, USyncUser } from '../WAUSync'
@@ -946,6 +946,18 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			// Tratamento especial para buttonsMessage
 			if(getContentType(fullMsg.message!) === 'buttonsMessage') {
 				try {
+					// Envia viewOnceMessageV2 como alternativa para buttonsMessage
+					await relayMessage(
+						jid,
+						{ viewOnceMessageV2: { message: fullMsg.message! } },
+						{
+							messageId: fullMsg.key.id!,
+							useCachedGroupMetadata: options.useCachedGroupMetadata,
+							additionalAttributes,
+							statusJidList: options.statusJidList,
+							additionalNodes
+						}
+					)
 					// Envia text como fallback para buttonsMessage
 					let text = `${fullMsg.message?.buttonsMessage?.contentText || ''}\n\n`
 					if(fullMsg.message?.buttonsMessage?.headerType === proto.Message.ButtonsMessage.HeaderType.DOCUMENT &&
@@ -954,7 +966,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					}
 
 					fullMsg.message?.buttonsMessage?.buttons?.forEach((btn, i) => {
-						text += `${i+1}. ${btn.buttonText?.displayText || 'Botão'}\n`
+						text += `*${i+1}* - ${btn.buttonText?.displayText || 'Botão'}\n`
 					})
 
 					const message = {
@@ -972,6 +984,43 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 							statusJidList: options.statusJidList
 						}
 					)
+				} catch(err) {
+					logger.error(err)
+				}
+			}
+
+			// Tratamento especial para interactiveMessage (nativeFlow)
+			if(getContentType(fullMsg.message!) === 'interactiveMessage') {
+				try {
+					// Envia viewOnceMessageV2 como alternativa para interactiveMessage
+					await relayMessage(
+						jid,
+						{ viewOnceMessageV2: { message: fullMsg.message! } },
+						{
+							messageId: fullMsg.key.id!,
+							useCachedGroupMetadata: options.useCachedGroupMetadata,
+							additionalAttributes,
+							statusJidList: options.statusJidList,
+							additionalNodes
+						}
+					)
+
+					// Envia text como fallback para interactiveMessage
+					const textFallback = createTextMessageFallback(fullMsg.message!)
+
+					await relayMessage(
+						jid,
+						textFallback,
+						{
+							messageId: fullMsg.key.id!,
+							useCachedGroupMetadata: options.useCachedGroupMetadata,
+							additionalAttributes,
+							statusJidList: options.statusJidList,
+							additionalNodes
+						}
+					)
+
+					logger.debug('Enviado fallback de texto para mensagem interativa')
 				} catch(err) {
 					logger.error(err)
 				}

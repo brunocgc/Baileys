@@ -1237,3 +1237,46 @@ export const createHydratedQuickReplyButton = (
 		}
 	}
 }
+
+/**
+ * Cria uma mensagem de texto simples como fallback para mensagens interativas
+ * @param message Mensagem interativa original
+ * @returns Mensagem de texto para usar como fallback
+ */
+export const createTextMessageFallback = (message: proto.IMessage): proto.IMessage => {
+	const interactiveMessage = message.interactiveMessage;
+	if (!interactiveMessage) {
+		return { conversation: 'Mensagem não suportada' };
+	}
+
+	let text = '';
+
+	// Adicionar título do cabeçalho se existir
+	if (interactiveMessage.header?.title) {
+		text += `${interactiveMessage.header.title}\n\n`;
+	}
+
+	// Adicionar texto do corpo
+	if (interactiveMessage.body?.text) {
+		text += `${interactiveMessage.body.text}\n\n`;
+	}
+
+	// Adicionar botões se for nativeFlow
+	if (interactiveMessage.nativeFlowMessage?.buttons?.length) {
+		interactiveMessage.nativeFlowMessage.buttons.forEach((button, index) => {
+			text += `${index + 1}. ${button.name || 'Botão'}\n`;
+		});
+		text += '\n';
+	}
+
+	// Adicionar rodapé se existir
+	if (interactiveMessage.footer?.text) {
+		text += `${interactiveMessage.footer.text}`;
+	}
+
+	return {
+		extendedTextMessage: {
+			text: text.trim()
+		}
+	};
+}
