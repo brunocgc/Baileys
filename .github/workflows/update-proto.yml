@@ -1,9 +1,9 @@
 name: Update WA Proto Files
 
 on:
-  push:
-    branches:
-      - "**"
+  schedule:
+    - cron: "10 1 * * *"
+  workflow_dispatch:
 
 jobs:
   update-proto:
