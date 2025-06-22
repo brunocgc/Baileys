@@ -16,7 +16,7 @@ import {
 	aesEncryptCTR,
 	bindWaitForConnectionUpdate,
 	bytesToCrockford,
-	configureSuccessfulPairing,
+	configureSuccessfulPairingAuto,
 	Curve,
 	derivePairingCodeKey,
 	generateLoginNode,
@@ -30,15 +30,14 @@ import {
 	makeNoiseHandler,
 	promiseTimeout,
 } from '../Utils'
+import { formatIdentifier, getWhatsAppDomain, isLidIdentifier } from '../Utils/lid-utils'
 import {
 	assertNodeErrorFree,
 	BinaryNode,
 	binaryNodeToString,
 	encodeBinaryNode,
 	getBinaryNodeChild,
-	getBinaryNodeChildren,
-	jidEncode,
-	S_WHATSAPP_NET
+	getBinaryNodeChildren
 } from '../WABinary'
 import { WebSocketClient } from './Client'
 
@@ -57,23 +56,13 @@ export const makeSocket = (config: SocketConfig) => {
 		keepAliveIntervalMs,
 		browser,
 		auth: authState,
-		printQRInTerminal,
 		defaultQueryTimeoutMs,
 		transactionOpts,
 		qrTimeout,
 		makeSignalRepository,
 	} = config
 
-	if(printQRInTerminal) {
-		console.warn('⚠️ The printQRInTerminal option has been deprecated. You will no longer receive QR codes in the terminal automatically. Please listen to the connection.update event yourself and handle the QR your way. You can remove this message by removing this opttion. This message will be removed in a future version.')
-	}
-
 	const url = typeof waWebSocketUrl === 'string' ? new URL(waWebSocketUrl) : waWebSocketUrl
-
-
-	if(config.mobile || url.protocol === 'tcp:') {
-		throw new Boom('Mobile API is not supported anymore', { statusCode: DisconnectReason.loggedOut })
-	}
 
 	if(url.protocol === 'wss' && authState?.creds?.routingInfo) {
 		url.searchParams.append('ED', authState.creds.routingInfo.toString('base64url'))
@@ -264,17 +253,19 @@ export const makeSocket = (config: SocketConfig) => {
 			}).finish()
 		)
 		noise.finishInit()
-		startKeepAliveRequest()
+		// Auto-detect LID usage for keep alive
+		const useLid = isLidIdentifier(authState.creds.me?.id)
+		startKeepAliveRequest(useLid)
 	}
 
-	const getAvailablePreKeysOnServer = async() => {
+	const getAvailablePreKeysOnServer = async(useLid = false) => {
 		const result = await query({
 			tag: 'iq',
 			attrs: {
 				id: generateMessageTag(),
 				xmlns: 'encrypt',
 				type: 'get',
-				to: S_WHATSAPP_NET
+				to: getWhatsAppDomain(useLid)
 			},
 			content: [
 				{ tag: 'count', attrs: {} }
@@ -299,8 +290,8 @@ export const makeSocket = (config: SocketConfig) => {
 		)
 	}
 
-	const uploadPreKeysToServerIfRequired = async() => {
-		const preKeyCount = await getAvailablePreKeysOnServer()
+	const uploadPreKeysToServerIfRequired = async(useLid = false) => {
+		const preKeyCount = await getAvailablePreKeysOnServer(useLid)
 		logger.info(`${preKeyCount} pre-keys found on server`)
 		if(preKeyCount <= MIN_PREKEY_COUNT) {
 			await uploadPreKeys()
@@ -407,7 +398,7 @@ export const makeSocket = (config: SocketConfig) => {
 			})
 	}
 
-	const startKeepAliveRequest = () => (
+	const startKeepAliveRequest = (useLid = false) => (
 		keepAliveReq = setInterval(() => {
 			if(!lastDateRecv) {
 				lastDateRecv = new Date()
@@ -427,7 +418,7 @@ export const makeSocket = (config: SocketConfig) => {
 						tag: 'iq',
 						attrs: {
 							id: generateMessageTag(),
-							to: S_WHATSAPP_NET,
+							to: getWhatsAppDomain(useLid),
 							type: 'get',
 							xmlns: 'w:p',
 						},
@@ -443,11 +434,11 @@ export const makeSocket = (config: SocketConfig) => {
 		}, keepAliveIntervalMs)
 	)
 	/** i have no idea why this exists. pls enlighten me */
-	const sendPassiveIq = (tag: 'passive' | 'active') => (
+	const sendPassiveIq = (tag: 'passive' | 'active', useLid = false) => (
 		query({
 			tag: 'iq',
 			attrs: {
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				xmlns: 'passive',
 				type: 'set',
 			},
@@ -458,13 +449,13 @@ export const makeSocket = (config: SocketConfig) => {
 	)
 
 	/** logout & invalidate connection */
-	const logout = async(msg?: string) => {
+	const logout = async(msg?: string, useLid = false) => {
 		const jid = authState.creds.me?.id
 		if(jid) {
 			await sendNode({
 				tag: 'iq',
 				attrs: {
-					to: S_WHATSAPP_NET,
+					to: getWhatsAppDomain(useLid),
 					type: 'set',
 					id: generateMessageTag(),
 					xmlns: 'md'
@@ -484,17 +475,17 @@ export const makeSocket = (config: SocketConfig) => {
 		end(new Boom(msg || 'Intentional Logout', { statusCode: DisconnectReason.loggedOut }))
 	}
 
-	const requestPairingCode = async(phoneNumber: string): Promise<string> => {
+	const requestPairingCode = async(phoneNumber: string, useLid = false): Promise<string> => {
 		authState.creds.pairingCode = bytesToCrockford(randomBytes(5))
 		authState.creds.me = {
-			id: jidEncode(phoneNumber, 's.whatsapp.net'),
+			id: formatIdentifier(phoneNumber, useLid ? 'lid' : 'jid'),
 			name: '~'
 		}
 		ev.emit('creds.update', authState.creds)
 		await sendNode({
 			tag: 'iq',
 			attrs: {
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'set',
 				id: generateMessageTag(),
 				xmlns: 'md'
@@ -549,11 +540,11 @@ export const makeSocket = (config: SocketConfig) => {
 		return Buffer.concat([salt, randomIv, ciphered])
 	}
 
-	const sendWAMBuffer = (wamBuffer: Buffer) => {
+	const sendWAMBuffer = (wamBuffer: Buffer, useLid = false) => {
 		return query({
 			tag: 'iq',
 			attrs: {
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				id: generateMessageTag(),
 				xmlns: 'w:stats'
 			},
@@ -565,6 +556,44 @@ export const makeSocket = (config: SocketConfig) => {
 				}
 			]
 		})
+	}
+
+	// Auto-detecting variants for convenience
+	const getAvailablePreKeysOnServerAuto = async() => {
+		const useLid = isLidIdentifier(authState.creds.me?.id)
+		return getAvailablePreKeysOnServer(useLid)
+	}
+
+	const uploadPreKeysToServerIfRequiredAuto = async() => {
+		const useLid = isLidIdentifier(authState.creds.me?.id)
+		return uploadPreKeysToServerIfRequired(useLid)
+	}
+
+	const startKeepAliveRequestAuto = () => {
+		const useLid = isLidIdentifier(authState.creds.me?.id)
+		return startKeepAliveRequest(useLid)
+	}
+
+	const sendPassiveIqAuto = (tag: 'passive' | 'active') => {
+		const useLid = isLidIdentifier(authState.creds.me?.id)
+		return sendPassiveIq(tag, useLid)
+	}
+
+	const logoutAuto = async(msg?: string) => {
+		const useLid = isLidIdentifier(authState.creds.me?.id)
+		return logout(msg, useLid)
+	}
+
+	const requestPairingCodeAuto = async(phoneNumber: string) => {
+		// For pairing, we typically want to use LID if the phone number suggests it
+		// This is a heuristic and may need adjustment based on actual usage
+		const useLid = false // Default to JID for pairing unless explicitly specified
+		return requestPairingCode(phoneNumber, useLid)
+	}
+
+	const sendWAMBufferAuto = (wamBuffer: Buffer) => {
+		const useLid = isLidIdentifier(authState.creds.me?.id)
+		return sendWAMBuffer(wamBuffer, useLid)
 	}
 
 	ws.on('message', onMessageReceived)
@@ -583,10 +612,12 @@ export const makeSocket = (config: SocketConfig) => {
 	ws.on('CB:xmlstreamend', () => end(new Boom('Connection Terminated by Server', { statusCode: DisconnectReason.connectionClosed })))
 	// QR gen
 	ws.on('CB:iq,type:set,pair-device', async(stanza: BinaryNode) => {
+		// Auto-detect LID usage based on current user ID
+		const useLid = isLidIdentifier(authState.creds.me?.id)
 		const iq: BinaryNode = {
 			tag: 'iq',
 			attrs: {
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'result',
 				id: stanza.attrs.id,
 			}
@@ -627,7 +658,7 @@ export const makeSocket = (config: SocketConfig) => {
 	ws.on('CB:iq,,pair-success', async(stanza: BinaryNode) => {
 		logger.debug('pair success recv')
 		try {
-			const { reply, creds: updatedCreds } = configureSuccessfulPairing(stanza, creds)
+			const { reply, creds: updatedCreds } = configureSuccessfulPairingAuto(stanza, creds)
 
 			logger.info(
 				{ me: updatedCreds.me, platform: updatedCreds.platform },
@@ -645,8 +676,10 @@ export const makeSocket = (config: SocketConfig) => {
 	})
 	// login complete
 	ws.on('CB:success', async(node: BinaryNode) => {
-		await uploadPreKeysToServerIfRequired()
-		await sendPassiveIq('active')
+		// Auto-detect LID usage for upload and passive IQ
+		const useLid = isLidIdentifier(authState.creds.me?.id)
+		await uploadPreKeysToServerIfRequired(useLid)
+		await sendPassiveIq('active', useLid)
 
 		logger.info('opened connection to WA')
 		clearTimeout(qrTimer) // will never happen in all likelyhood -- but just in case WA sends success on first try
@@ -757,9 +790,20 @@ export const makeSocket = (config: SocketConfig) => {
 		uploadPreKeys,
 		uploadPreKeysToServerIfRequired,
 		requestPairingCode,
+		getAvailablePreKeysOnServer,
+		startKeepAliveRequest,
+		sendPassiveIq,
 		/** Waits for the connection to WA to reach a state */
 		waitForConnectionUpdate: bindWaitForConnectionUpdate(ev),
 		sendWAMBuffer,
+		// Auto-detecting variants for convenience
+		getAvailablePreKeysOnServerAuto,
+		uploadPreKeysToServerIfRequiredAuto,
+		startKeepAliveRequestAuto,
+		sendPassiveIqAuto,
+		logoutAuto,
+		requestPairingCodeAuto,
+		sendWAMBufferAuto,
 	}
 }
 

@@ -7,8 +7,9 @@ import { waproto as proto } from '../../WAProto'
 import { DEFAULT_CACHE_TTLS, WA_DEFAULT_EPHEMERAL } from '../Defaults'
 import { AnyMessageContent, MediaConnInfo, MessageReceiptType, MessageRelayOptions, MiscMessageGenerationOptions, SocketConfig, WAMessageKey } from '../Types'
 import { aggregateMessageKeysNotFromMe, assertMediaContent, bindWaitForEvent, decryptMediaRetryData, encodeSignedDeviceIdentity, encodeWAMessage, encryptMediaRetryRequest, extractDeviceJids, generateMessageIDV2, generateWAMessage, getContentType, getStatusCodeForMediaRetry, getUrlFromDirectPath, getWAUploadToServer, normalizeMessageContent, parseAndInjectE2ESessions, unixTimestampSeconds } from '../Utils'
+import { getWhatsAppDomain, isLidIdentifier } from '../Utils/lid-utils'
 import { getUrlInfo } from '../Utils/link-preview'
-import { areJidsSameUser, BinaryNode, BinaryNodeAttributes, getBinaryNodeChild, getBinaryNodeChildren, isJidGroup, isJidUser, jidDecode, jidEncode, jidNormalizedUser, JidWithDevice, S_WHATSAPP_NET } from '../WABinary'
+import { areJidsSameUser, BinaryNode, BinaryNodeAttributes, getBinaryNodeChild, getBinaryNodeChildren, isJidGroup, isJidUser, jidDecode, jidEncode, jidNormalizedUser, JidWithDevice } from '../WABinary'
 import { USyncQuery, USyncUser } from '../WAUSync'
 import { makeGroupsSocket } from './groups'
 import ListType = proto.Message.ListMessage.ListType;
@@ -42,7 +43,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 	})
 
 	let mediaConn: Promise<MediaConnInfo>
-	const refreshMediaConn = async(forceGet = false) => {
+	const refreshMediaConn = async(forceGet = false, useLid = false) => {
 		const media = await mediaConn
 		if(!media || forceGet || (new Date().getTime() - media.fetchDate.getTime()) > media.ttl * 1000) {
 			mediaConn = (async() => {
@@ -51,7 +52,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 					attrs: {
 						type: 'set',
 						xmlns: 'w:m',
-						to: S_WHATSAPP_NET,
+						to: getWhatsAppDomain(useLid),
 					},
 					content: [ { tag: 'media_conn', attrs: { } } ]
 				})
@@ -200,7 +201,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		return deviceResults
 	}
 
-	const assertSessions = async(jids: string[], force: boolean) => {
+	const assertSessions = async(jids: string[], force: boolean, useLid = false) => {
 		let didFetchNewSession = false
 		let jidsRequiringFetch: string[] = []
 		if(force) {
@@ -227,7 +228,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 				attrs: {
 					xmlns: 'encrypt',
 					type: 'get',
-					to: S_WHATSAPP_NET,
+					to: getWhatsAppDomain(useLid),
 				},
 				content: [
 					{
@@ -459,7 +460,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 							}
 						}
 
-						await assertSessions(senderKeyJids, false)
+						await assertSessionsAuto(senderKeyJids, false)
 
 						const result = await createParticipantNodes(senderKeyJids, senderKeyMsg, extraAttrs)
 						shouldIncludeDeviceIdentity = shouldIncludeDeviceIdentity || result.shouldIncludeDeviceIdentity
@@ -509,7 +510,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 						allJids.push(jid)
 					}
 
-					await assertSessions(allJids, false)
+					await assertSessionsAuto(allJids, false)
 
 					const [
 						{ nodes: meNodes, shouldIncludeDeviceIdentity: s1 },
@@ -677,12 +678,12 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		}
 	}
 
-	const getPrivacyTokens = async(jids: string[]) => {
+	const getPrivacyTokens = async(jids: string[], useLid = false) => {
 		const t = unixTimestampSeconds().toString()
 		const result = await query({
 			tag: 'iq',
 			attrs: {
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'set',
 				xmlns: 'privacy'
 			},
@@ -711,16 +712,35 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 
 	const waitForMsgMediaUpdate = bindWaitForEvent(ev, 'messages.media-update')
 
+	// Auto-detection functions for easier usage
+	const refreshMediaConnAuto = async(forceGet = false) => {
+		const useLid = isLidIdentifier(authState.creds.me?.id || '')
+		return refreshMediaConn(forceGet, useLid)
+	}
+
+	const assertSessionsAuto = async(jids: string[], force: boolean) => {
+		const useLid = isLidIdentifier(authState.creds.me?.id || '')
+		return assertSessions(jids, force, useLid)
+	}
+
+	const getPrivacyTokensAuto = async(jids: string[]) => {
+		const useLid = isLidIdentifier(authState.creds.me?.id || '')
+		return getPrivacyTokens(jids, useLid)
+	}
+
 	return {
 		...sock,
 		getPrivacyTokens,
+		getPrivacyTokensAuto,
 		assertSessions,
+		assertSessionsAuto,
 		relayMessage,
 		sendReceipt,
 		sendReceipts,
 		getButtonArgs,
 		readMessages,
 		refreshMediaConn,
+		refreshMediaConnAuto,
 		waUploadToServer,
 		fetchPrivacySettings,
 		sendPeerDataOperationMessage,

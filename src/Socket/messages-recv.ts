@@ -30,6 +30,7 @@ import {
 	xmppPreKey,
 	xmppSignedPreKey
 } from '../Utils'
+import { getWhatsAppDomain, isLidIdentifier } from '../Utils/lid-utils'
 import { makeMutex } from '../Utils/make-mutex'
 import {
 	areJidsSameUser,
@@ -316,7 +317,8 @@ export const makeMessagesRecvSocket = (config: SocketConfig) => {
 
 	const handleEncryptNotification = async(node: BinaryNode) => {
 		const from = node.attrs.from
-		if(from === S_WHATSAPP_NET) {
+		// Support both JID and LID domains
+		if(from === S_WHATSAPP_NET || from === 'lid') {
 			const countChild = getBinaryNodeChild(node, 'count')
 			const count = +countChild!.attrs.value
 			const shouldUploadMorePreKeys = count < MIN_PREKEY_COUNT
@@ -567,10 +569,14 @@ export const makeMessagesRecvSocket = (config: SocketConfig) => {
 			const identitySharedKey = Curve.sharedKey(authState.creds.signedIdentityKey.private, primaryIdentityPublicKey)
 			const identityPayload = Buffer.concat([companionSharedKey, identitySharedKey, random])
 			authState.creds.advSecretKey = (await hkdf(identityPayload, 32, { info: 'adv_secret' })).toString('base64')
+
+			// Automatically detect if we should use LID based on the user's ID
+			const useLid = isLidIdentifier(authState.creds.me!.id) || isLidIdentifier(authState.creds.me!.lid)
+
 			await query({
 				tag: 'iq',
 				attrs: {
-					to: S_WHATSAPP_NET,
+					to: getWhatsAppDomain(useLid),
 					type: 'set',
 					id: sock.generateMessageTag(),
 					xmlns: 'md'
@@ -696,7 +702,7 @@ export const makeMessagesRecvSocket = (config: SocketConfig) => {
 			participant: attrs.participant
 		}
 
-		if(shouldIgnoreJid(remoteJid) && remoteJid !== '@s.whatsapp.net') {
+		if(shouldIgnoreJid(remoteJid) && remoteJid !== '@s.whatsapp.net' && remoteJid !== '@lid') {
 			logger.debug({ remoteJid }, 'ignoring receipt from jid')
 			await sendMessageAck(node)
 			return
@@ -776,7 +782,7 @@ export const makeMessagesRecvSocket = (config: SocketConfig) => {
 
 	const handleNotification = async(node: BinaryNode) => {
 		const remoteJid = node.attrs.from
-		if(shouldIgnoreJid(remoteJid) && remoteJid !== '@s.whatsapp.net') {
+		if(shouldIgnoreJid(remoteJid) && remoteJid !== '@s.whatsapp.net' && remoteJid !== '@lid') {
 			logger.debug({ remoteJid, id: node.attrs.id }, 'ignored notification')
 			await sendMessageAck(node)
 			return
@@ -811,7 +817,7 @@ export const makeMessagesRecvSocket = (config: SocketConfig) => {
 	}
 
 	const handleMessage = async(node: BinaryNode) => {
-		if(shouldIgnoreJid(node.attrs.from) && node.attrs.from !== '@s.whatsapp.net') {
+		if(shouldIgnoreJid(node.attrs.from) && node.attrs.from !== '@s.whatsapp.net' && node.attrs.from !== '@lid') {
 			logger.debug({ key: node.attrs.key }, 'ignored message')
 			await sendMessageAck(node)
 			return
