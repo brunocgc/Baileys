@@ -16,36 +16,35 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           path: baileys
 
-      - name: Clone WAProtoGen repository
+      - name: Clone wa-proto repository
         uses: actions/checkout@v4
         with:
-          repository: wppconnect-team/WAProtoGen
-          path: WAProtoGen
+          repository: wppconnect-team/wa-proto
+          path: wa-proto
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'yarn'
-          cache-dependency-path: WAProtoGen/yarn.lock
+          cache-dependency-path: wa-proto/yarn.lock
 
-      - name: Install dependencies in WAProtoGen
-        working-directory: WAProtoGen
+      - name: Install dependencies in wa-proto
+        working-directory: wa-proto
         run: yarn install --frozen-lockfile
 
-      - name: Build WAProtoGen
-        working-directory: WAProtoGen
+      - name: Build wa-proto
+        working-directory: wa-proto
         run: yarn build
 
       - name: Copy WAProto.proto to Baileys
         run: |
-          cp WAProtoGen/WAProto.proto baileys/WAProto/WAProto.proto
-
+          cp wa-proto/WAProto.proto baileys/WAProto/WAProto.proto
 
       - name: Copy index files from dist to Baileys
         run: |
-          cp WAProtoGen/dist/index.js baileys/WAProto/index.js
-          cp WAProtoGen/dist/index.d.ts baileys/WAProto/index.d.ts
+          cp wa-proto/dist/index.js baileys/WAProto/index.js
+          cp wa-proto/dist/index.d.ts baileys/WAProto/index.d.ts
 
       - name: Extract and update WhatsApp version
         run: |
@@ -120,7 +119,7 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add WAProto/ src/Defaults/baileys-version.json
-          git commit -m "chore: update WAProto files from WAProtoGen repository
+          git commit -m "chore: update WAProto files from wa-proto repository
 
           - Updated WAProto.proto
           - Updated index.js and index.d.ts from dist folder
@@ -135,7 +134,7 @@ jobs:
         with:
           path: baileys
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore: update WAProto files from WAProtoGen repository"
+          commit-message: "chore: update WAProto files from wa-proto repository"
           title: "🤖 Auto-update WAProto files"
           body: |
             ## 🔄 Automated WAProto Update
@@ -149,7 +148,7 @@ jobs:
             - ✅ Atualizado `src/Defaults/baileys-version.json` com a versão mais recente do WhatsApp
 
             ### Origem:
-            - Repositório: https://github.com/wppconnect-team/WAProtoGen.git
+            - Repositório: https://github.com/wppconnect-team/wa-proto.git
             - Data da execução: ${{ github.run_id }}
 
             ⚠️ **Revisar antes de fazer merge!**
