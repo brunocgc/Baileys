@@ -13,7 +13,7 @@ jobs:
       - name: Checkout Baileys repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GIT_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           path: baileys
 
       - name: Clone WAProtoGen repository
@@ -134,7 +134,7 @@ jobs:
         uses: peter-evans/create-pull-request@v5
         with:
           path: baileys
-          token: ${{ secrets.GIT_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "chore: update WAProto files from WAProtoGen repository"
           title: "🤖 Auto-update WAProto files"
           body: |
