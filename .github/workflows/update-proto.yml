@@ -48,8 +48,17 @@ jobs:
 
       - name: Extract and update WhatsApp version
         run: |
-          # Buscar por "WhatsApp Version" no WAProto.proto
-          VERSION_LINE=$(grep -i "WhatsApp Version" baileys/WAProto/WAProto.proto || echo "")
+          # Garantir que o script não falhe em caso de grep sem resultados
+          set +e
+
+          echo "Searching for WhatsApp version in WAProto.proto..."
+
+          # Primeiro, vamos ver o conteúdo do arquivo para debug
+          echo "First 10 lines of WAProto.proto:"
+          head -10 baileys/WAProto/WAProto.proto || echo "Could not read file"
+
+          # Buscar por "WhatsApp Version" no WAProto.proto (case insensitive)
+          VERSION_LINE=$(grep -i "whatsapp version" baileys/WAProto/WAProto.proto 2>/dev/null || echo "")
 
           if [ -n "$VERSION_LINE" ]; then
             echo "Found version line: $VERSION_LINE"
@@ -75,15 +84,14 @@ jobs:
               echo "Could not extract version number from: $VERSION_LINE"
             fi
           else
-            echo "WhatsApp Version line not found in WAProto.proto"
+            echo "WhatsApp Version line not found with grep. Trying line 4..."
             # Verificar se existe na linha 4 especificamente
-            LINE_4=$(sed -n '4p' baileys/WAProto/WAProto.proto)
-            echo "Line 4 content: $LINE_4"
+            LINE_4=$(sed -n '4p' baileys/WAProto/WAProto.proto 2>/dev/null || echo "")
+            echo "Line 4 content: '$LINE_4'"
 
-            VERSION_LINE_4=$(echo "$LINE_4" | grep -i "WhatsApp Version" || echo "")
-            if [ -n "$VERSION_LINE_4" ]; then
-              echo "Found version in line 4: $VERSION_LINE_4"
-              VERSION=$(echo "$VERSION_LINE_4" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+            if echo "$LINE_4" | grep -qi "whatsapp version"; then
+              echo "Found version reference in line 4"
+              VERSION=$(echo "$LINE_4" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
 
               if [ -n "$VERSION" ]; then
                 echo "Extracted version from line 4: $VERSION"
@@ -93,11 +101,35 @@ jobs:
                 cat > baileys/src/Defaults/baileys-version.json << EOF
           {
           	"version": [$MAJOR,$MINOR,$PATCH]
-          }          EOF
-              echo "Updated baileys-version.json with version from line 4: [$MAJOR,$MINOR,$PATCH]"
+          }
+          EOF
+                echo "Updated baileys-version.json with version from line 4: [$MAJOR,$MINOR,$PATCH]"
+              else
+                echo "Could not extract version from line 4"
+              fi
+            else
+              echo "No WhatsApp Version found in line 4. Searching entire file for version pattern..."
+              # Como fallback, vamos tentar buscar qualquer número de versão no arquivo
+              VERSION_FALLBACK=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' baileys/WAProto/WAProto.proto 2>/dev/null | head -1 || echo "")
+              if [ -n "$VERSION_FALLBACK" ]; then
+                echo "Found fallback version pattern: $VERSION_FALLBACK"
+                IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_FALLBACK"
+                cat > baileys/src/Defaults/baileys-version.json << EOF
+          {
+          	"version": [$MAJOR,$MINOR,$PATCH]
+          }
+          EOF
+                echo "Updated baileys-version.json with fallback version: [$MAJOR,$MINOR,$PATCH]"
+              else
+                echo "No version pattern found anywhere in the file. Keeping existing baileys-version.json"
               fi
             fi
           fi
+
+          # Reativar exit em caso de erro para os próximos comandos
+          set -e
+
+          echo "Version extraction step completed successfully"
 
       - name: Check for changes
         id: check_changes
