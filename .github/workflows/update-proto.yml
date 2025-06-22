@@ -2,8 +2,8 @@ name: Update WA Proto Files
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - "**"
 
 jobs:
   update-proto:
@@ -149,10 +149,10 @@ jobs:
         uses: peter-evans/create-pull-request@v5
         with:
           path: baileys
-          repository: brunocgc/Baileys
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "chore: update WAProto files from wa-proto repository"
           title: "🤖 Auto-update WAProto files"
+          base: ${{ github.event.repository.default_branch || 'dev' }}
           body: |
             ## 🔄 Automated WAProto Update
 
