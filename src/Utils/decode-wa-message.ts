@@ -1,7 +1,7 @@
 import { Boom } from '@hapi/boom'
 import { waproto as proto } from '../../WAProto'
 import { SignalRepository, WAMessageKey } from '../Types'
-import { areJidsSameUser, BinaryNode, isJidBroadcast, isJidGroup, isJidNewsletter, isJidStatusBroadcast, isJidUser, isLidUser } from '../WABinary'
+import { areJidsSameUser, BinaryNode, isJidBroadcast, isJidGroup, isJidNewsletter, isJidStatusBroadcast, isLidUser, isUserIdentifier } from '../WABinary'
 import { unpadRandomMax16 } from './generics'
 import { ILogger } from './logger'
 
@@ -47,7 +47,7 @@ export function decodeMessageNode(
 	const isMe = (jid: string) => areJidsSameUser(jid, meId)
 	const isMeLid = (jid: string) => areJidsSameUser(jid, meLid)
 
-	if(isJidUser(from)) {
+	if(isUserIdentifier(from)) {
 		if(recipient) {
 			if(!isMe(from)) {
 				throw new Boom('receipient present, but msg not from me', { data: stanza })
@@ -180,7 +180,7 @@ export const decryptMessageNode = (
 							break
 						case 'pkmsg':
 						case 'msg':
-							const user = isJidUser(sender) ? sender : author
+							const user = isUserIdentifier(sender) ? sender : author
 							msgBuffer = await repository.decryptMessage({
 								jid: user,
 								type: e2eType,
