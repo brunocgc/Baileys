@@ -2,8 +2,7 @@ import * as libsignal from 'libsignal'
 import { GroupCipher, GroupSessionBuilder, SenderKeyDistributionMessage, SenderKeyName, SenderKeyRecord } from '../../WASignalGroup'
 import { SignalAuthState } from '../Types'
 import { SignalRepository } from '../Types/Signal'
-import { generateSignalPubKey } from '../Utils'
-import { jidDecode } from '../WABinary'
+import { generateSignalPubKey, parseIdentifier } from '../Utils'
 
 export function makeLibSignalRepository(auth: SignalAuthState): SignalRepository {
 	const storage = signalStorage(auth)
@@ -78,8 +77,12 @@ export function makeLibSignalRepository(auth: SignalAuthState): SignalRepository
 }
 
 const jidToSignalProtocolAddress = (jid: string) => {
-	const { user, device } = jidDecode(jid)!
-	return new libsignal.ProtocolAddress(user, device || 0)
+	const parsed = parseIdentifier(jid)
+	if(!parsed) {
+		throw new Error(`Invalid identifier format for Signal Protocol: ${jid}`)
+	}
+
+	return new libsignal.ProtocolAddress(parsed.user, parsed.device || 0)
 }
 
 const jidToSignalSenderKeyName = (group: string, user: string): string => {
@@ -91,7 +94,14 @@ function signalStorage({ creds, keys }: SignalAuthState) {
 		loadSession: async(id: string) => {
 			const { [id]: sess } = await keys.get('session', [id])
 			if(sess) {
-				return libsignal.SessionRecord.deserialize(sess)
+				try {
+					return libsignal.SessionRecord.deserialize(sess)
+				} catch{
+					// If session fails to deserialize, it might be corrupted
+					// Remove it to allow creating a new one
+					await keys.set({ 'session': { [id]: null } })
+					return undefined
+				}
 			}
 		},
 		storeSession: async(id, session) => {
@@ -137,5 +147,34 @@ function signalStorage({ creds, keys }: SignalAuthState) {
 				pubKey: generateSignalPubKey(signedIdentityKey.public),
 			}
 		}
+	}
+}
+
+/**
+ * Clean potentially corrupted or incompatible sessions
+ * This helps resolve "Bad MAC" errors caused by session incompatibility
+ */
+export const cleanIncompatibleSessions = async(keys: any) => {
+	try {
+		// Get all session keys
+		const allSessions = await keys.get('session', [])
+		const sessionKeys = Object.keys(allSessions || {})
+
+		let cleanedCount = 0
+		for(const sessionKey of sessionKeys) {
+			// Check if session key looks like it might be problematic
+			// e.g., contains device IDs that might have been parsed incorrectly
+			if(sessionKey.includes('.') && !sessionKey.endsWith('@s.whatsapp.net') && !sessionKey.endsWith('@lid')) {
+				// This looks like a bare user.device format which might be problematic
+				await keys.set({ 'session': { [sessionKey]: null } })
+				cleanedCount++
+			}
+		}
+
+		if(cleanedCount > 0) {
+			console.log(`Cleaned ${cleanedCount} potentially incompatible sessions`)
+		}
+	} catch(error) {
+		console.warn('Failed to clean sessions:', error)
 	}
 }

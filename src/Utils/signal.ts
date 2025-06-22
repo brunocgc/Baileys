@@ -8,15 +8,33 @@ import { Curve, generateSignalPubKey } from './crypto'
 import { encodeBigEndian } from './generics'
 import { getWhatsAppDomain, isLidIdentifier } from './lid-utils'
 
-const parseIdentifier = (identifier: string) => {
+export const parseIdentifier = (identifier: string) => {
 	if(isLidIdentifier(identifier)) {
 		// LID format: number@lid
 		const parts = identifier.split('@')
 		return { user: parts[0], device: 0, isLid: true }
 	} else {
-		// JID format: number@s.whatsapp.net or number.device@s.whatsapp.net
+		// JID format: number@s.whatsapp.net or number.device@s.whatsapp.net or number:device@s.whatsapp.net
 		const decoded = jidDecode(identifier)
-		return decoded ? { ...decoded, isLid: false } : null
+		if(!decoded) {
+			return null
+		}
+
+		// Se jidDecode não encontrou device, verificar se há '.' na parte do usuário
+		if(decoded.device === undefined && decoded.user.includes('.')) {
+			const userParts = decoded.user.split('.')
+			if(userParts.length === 2 && !isNaN(parseInt(userParts[1]))) {
+				// Formato como 5521987908324.7 - extrair device ID
+				return {
+					...decoded,
+					user: userParts[0],
+					device: parseInt(userParts[1]),
+					isLid: false
+				}
+			}
+		}
+
+		return { ...decoded, isLid: false }
 	}
 }
 

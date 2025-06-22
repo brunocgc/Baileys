@@ -40,7 +40,7 @@ import {
 	getBinaryNodeChildBuffer,
 	getBinaryNodeChildren,
 	isJidGroup, isJidStatusBroadcast,
-	isJidUser,
+	isUserIdentifier,
 	jidDecode,
 	jidEncode,
 	jidNormalizedUser,
@@ -903,7 +903,7 @@ export const makeMessagesRecvSocket = (config: SocketConfig) => {
 							} else if(msg.key.fromMe) { // message was sent by us from a different device
 								type = 'sender'
 								// need to specially handle this case
-								if(isJidUser(msg.key.remoteJid!)) {
+								if(isUserIdentifier(msg.key.remoteJid!)) {
 									participant = author
 								}
 							} else if(!sendActiveReceipts) {

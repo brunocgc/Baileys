@@ -177,8 +177,10 @@ const startSock = async() => {
 								const phone = msg.key.remoteJid!.split('@')[0];
 								const lidUser = await sock.onWhatsApp(phone);
 								console.log('latest id is', lidUser, 'and my lid is', lid);
-								await sock!.readMessages([msg.key])
-								await sendMessageWTyping({ text: `Seu lid: ${JSON.stringify(lidUser[0])}\nMeu lid: ${JSON.stringify(lid)}` }, msg.key.remoteJid!)
+								await sock!.readMessages([msg.key]);
+								const dados = typeof lidUser[0].lid === 'string' ? lidUser[0].lid : msg.key.remoteJid!;
+								console.log(`dados ${dados}`);
+								await sendMessageWTyping({ text: `Enviado pelo ${dados}\n\nSeu lid: ${JSON.stringify(lidUser[0])}\nMeu lid: ${JSON.stringify(lid)}` }, dados);
 							}
 						}
 					}

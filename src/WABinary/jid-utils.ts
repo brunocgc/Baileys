@@ -72,3 +72,12 @@ export const jidNormalizedUser = (jid: string | undefined) => {
 	const { user, server } = result
 	return jidEncode(user, server === 'c.us' ? 's.whatsapp.net' : server as JidServer)
 }
+
+/**
+ * Check if a JID represents a user (either traditional JID or LID format)
+ * @param jid - The identifier to check
+ * @returns True if the JID represents a user (LID or traditional JID)
+ */
+export const isUserIdentifier = (jid: string | undefined): boolean => {
+	return !!(isJidUser(jid) || isLidUser(jid))
+}
