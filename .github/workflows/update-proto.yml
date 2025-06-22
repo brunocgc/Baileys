@@ -13,12 +13,14 @@ jobs:
       - name: Checkout Baileys repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GIT_TOKEN }}
           path: baileys
 
       - name: Clone WAProtoGen repository
-        run: |
-          git clone https://github.com/wppconnect-team/WAProtoGen.git WAProtoGen
+        uses: actions/checkout@v4
+        with:
+          repository: wppconnect-team/WAProtoGen
+          path: WAProtoGen
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -92,9 +94,8 @@ jobs:
                 cat > baileys/src/Defaults/baileys-version.json << EOF
           {
           	"version": [$MAJOR,$MINOR,$PATCH]
-          }
-          EOF
-                  echo "Updated baileys-version.json with version from line 4: [$MAJOR,$MINOR,$PATCH]"
+          }          EOF
+              echo "Updated baileys-version.json with version from line 4: [$MAJOR,$MINOR,$PATCH]"
               fi
             fi
           fi
@@ -106,7 +107,8 @@ jobs:
           git add WAProto/ src/Defaults/baileys-version.json
           if git diff --staged --quiet; then
             echo "changes=false" >> $GITHUB_OUTPUT
-            echo "No changes detected in WAProto files or baileys-version.json"          else
+            echo "No changes detected in WAProto files or baileys-version.json"
+          else
             echo "changes=true" >> $GITHUB_OUTPUT
             echo "Changes detected in WAProto files or baileys-version.json"
           fi
@@ -132,7 +134,7 @@ jobs:
         uses: peter-evans/create-pull-request@v5
         with:
           path: baileys
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GIT_TOKEN }}
           commit-message: "chore: update WAProto files from WAProtoGen repository"
           title: "🤖 Auto-update WAProto files"
           body: |
