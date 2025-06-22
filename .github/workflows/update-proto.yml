@@ -1,50 +1,155 @@
-name: Update WAProto
+name: Update WA Proto Files
 
 on:
-  schedule:
-    - cron: "10 1 * * *"
-  workflow_dispatch:
-
-permissions:
-  contents: write
-  pull-requests: write
+  push:
+    tags:
+      - "v*"
 
 jobs:
   update-proto:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Install Node
-        uses: actions/setup-node@v3
+      - name: Checkout Baileys repository
+        uses: actions/checkout@v4
         with:
-          node-version: 20.x
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: baileys
 
-      - name: Install packages
+      - name: Clone WAProtoGen repository
         run: |
-          yarn
-          yarn --pure-lockfile --cwd proto-extract
+          git clone https://github.com/wppconnect-team/WAProtoGen.git WAProtoGen
 
-      - name: GenerateStatics
-        run: yarn gen:protobuf
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'yarn'
+          cache-dependency-path: WAProtoGen/yarn.lock
 
-      - name: Update baileys-version.json
+      - name: Install dependencies in WAProtoGen
+        working-directory: WAProtoGen
+        run: yarn install --frozen-lockfile
+
+      - name: Build WAProtoGen
+        working-directory: WAProtoGen
+        run: yarn build
+
+      - name: Copy WAProto.proto to Baileys
         run: |
-          WA_VERSION="${{steps.wa_proto_info.outputs.wa_version}}"
-          WA_NUMBERS=$(echo $WA_VERSION | sed "s/\./, /g")
-          echo -e "{\n\t\"version\": [$WA_NUMBERS]\n}" > src/Defaults/baileys-version.json
+          cp WAProtoGen/WAProto.proto baileys/WAProto/WAProto.proto
 
-      - name: Create Pull Request
+
+      - name: Copy index files from dist to Baileys
+        run: |
+          cp WAProtoGen/dist/index.js baileys/WAProto/index.js
+          cp WAProtoGen/dist/index.d.ts baileys/WAProto/index.d.ts
+
+      - name: Extract and update WhatsApp version
+        run: |
+          # Buscar por "WhatsApp Version" no WAProto.proto
+          VERSION_LINE=$(grep -i "WhatsApp Version" baileys/WAProto/WAProto.proto || echo "")
+
+          if [ -n "$VERSION_LINE" ]; then
+            echo "Found version line: $VERSION_LINE"
+
+            # Extrair a versão usando regex (formato: 2.3000.1024069866)
+            VERSION=$(echo "$VERSION_LINE" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+
+            if [ -n "$VERSION" ]; then
+              echo "Extracted version: $VERSION"
+
+              # Dividir a versão em partes
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+              # Atualizar o baileys-version.json
+              cat > baileys/src/Defaults/baileys-version.json << EOF
+          {
+          	"version": [$MAJOR,$MINOR,$PATCH]
+          }
+          EOF
+
+              echo "Updated baileys-version.json with version: [$MAJOR,$MINOR,$PATCH]"
+            else
+              echo "Could not extract version number from: $VERSION_LINE"
+            fi
+          else
+            echo "WhatsApp Version line not found in WAProto.proto"
+            # Verificar se existe na linha 4 especificamente
+            LINE_4=$(sed -n '4p' baileys/WAProto/WAProto.proto)
+            echo "Line 4 content: $LINE_4"
+
+            VERSION_LINE_4=$(echo "$LINE_4" | grep -i "WhatsApp Version" || echo "")
+            if [ -n "$VERSION_LINE_4" ]; then
+              echo "Found version in line 4: $VERSION_LINE_4"
+              VERSION=$(echo "$VERSION_LINE_4" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+
+              if [ -n "$VERSION" ]; then
+                echo "Extracted version from line 4: $VERSION"
+
+                IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+                cat > baileys/src/Defaults/baileys-version.json << EOF
+          {
+          	"version": [$MAJOR,$MINOR,$PATCH]
+          }
+          EOF
+                  echo "Updated baileys-version.json with version from line 4: [$MAJOR,$MINOR,$PATCH]"
+              fi
+            fi
+          fi
+
+      - name: Check for changes
+        id: check_changes
+        working-directory: baileys
+        run: |
+          git add WAProto/ src/Defaults/baileys-version.json
+          if git diff --staged --quiet; then
+            echo "changes=false" >> $GITHUB_OUTPUT
+            echo "No changes detected in WAProto files or baileys-version.json"          else
+            echo "changes=true" >> $GITHUB_OUTPUT
+            echo "Changes detected in WAProto files or baileys-version.json"
+          fi
+
+      - name: Commit and push changes
+        if: steps.check_changes.outputs.changes == 'true'
+        working-directory: baileys
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add WAProto/ src/Defaults/baileys-version.json
+          git commit -m "chore: update WAProto files from WAProtoGen repository
+
+          - Updated WAProto.proto
+          - Updated index.js and index.d.ts from dist folder
+          - Updated baileys-version.json with latest WhatsApp version
+
+          Auto-generated by update-proto workflow"
+          git push
+
+      - name: Create Pull Request (optional)
+        if: steps.check_changes.outputs.changes == 'true'
         uses: peter-evans/create-pull-request@v5
         with:
-          commit-message: "chore: updated proto/version to v${{steps.wa_proto_info.outputs.wa_version}}"
-          title: "Whatsapp v${{steps.wa_proto_info.outputs.wa_version}} proto/version change"
-          branch: "update-proto/stable"
+          path: baileys
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update WAProto files from WAProtoGen repository"
+          title: "🤖 Auto-update WAProto files"
+          body: |
+            ## 🔄 Automated WAProto Update
+
+            Este PR foi criado automaticamente pelo workflow `update-proto`.
+
+            ### Alterações:
+            - ✅ Atualizado `WAProto/WAProto.proto`
+            - ✅ Atualizado `WAProto/index.js`
+            - ✅ Atualizado `WAProto/index.d.ts`
+            - ✅ Atualizado `src/Defaults/baileys-version.json` com a versão mais recente do WhatsApp
+
+            ### Origem:
+            - Repositório: https://github.com/wppconnect-team/WAProtoGen.git
+            - Data da execução: ${{ github.run_id }}
+
+            ⚠️ **Revisar antes de fazer merge!**
+          branch: auto-update-proto
           delete-branch: true
-          labels: "update-proto"
-          body: "Automated changes\nFound source JS URL: ${{steps.wa_proto_info.outputs.wa_js_url}}\nCurrent version: v${{steps.wa_proto_info.outputs.wa_version}}"
-          add-paths: |
-            WAProto/*
-            src/Defaults/baileys-version.json
