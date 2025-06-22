@@ -34,10 +34,6 @@ export type SocketConfig = {
     defaultQueryTimeoutMs: number | undefined
     /** ping-pong interval for WS connection */
     keepAliveIntervalMs: number
-	/** should baileys use the mobile api instead of the multi device api
-     * @deprecated This feature has been removed
-    */
-	mobile?: boolean
     /** proxy agent */
     agent?: Agent
     /** logger */
@@ -48,10 +44,6 @@ export type SocketConfig = {
     browser: WABrowserDescription
     /** agent used for fetch requests -- uploading/downloading media */
     fetchAgent?: Agent
-    /** should the QR be printed in the terminal
-    * @deprecated This feature has been removed
-    */
-    printQRInTerminal?: boolean
     /** should events be emitted for actions done by this socket connection */
     emitOwnEvents: boolean
     /** custom upload hosts to upload media to */

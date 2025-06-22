@@ -6,15 +6,53 @@ import { assertNodeErrorFree, BinaryNode, getBinaryNodeChild, getBinaryNodeChild
 import { DeviceListData, ParsedDeviceInfo, USyncQueryResultList } from '../WAUSync'
 import { Curve, generateSignalPubKey } from './crypto'
 import { encodeBigEndian } from './generics'
+import { getWhatsAppDomain, isLidIdentifier } from './lid-utils'
+
+const parseIdentifier = (identifier: string) => {
+	if(isLidIdentifier(identifier)) {
+		// LID format: number@lid
+		const parts = identifier.split('@')
+		return { user: parts[0], device: 0, isLid: true }
+	} else {
+		// JID format: number@s.whatsapp.net or number.device@s.whatsapp.net
+		const decoded = jidDecode(identifier)
+		return decoded ? { ...decoded, isLid: false } : null
+	}
+}
+
+// Enhanced utility functions
+export const getIdentifierType = (identifier: string): 'lid' | 'jid' => {
+	return isLidIdentifier(identifier) ? 'lid' : 'jid'
+}
+
+export const formatIdentifier = (user: string, device: number, type: 'lid' | 'jid'): string => {
+	if(type === 'lid') {
+		return `${user}@lid`
+	} else {
+		return device === 0 ? `${user}@${S_WHATSAPP_NET}` : `${user}.${device}@${S_WHATSAPP_NET}`
+	}
+}
 
 export const createSignalIdentity = (
-	wid: string,
+	identifier: string,
 	accountSignatureKey: Uint8Array
 ): SignalIdentity => {
+	const parsed = parseIdentifier(identifier)
+	if(!parsed) {
+		throw new Error(`Invalid identifier format: ${identifier}`)
+	}
+
 	return {
-		identifier: { name: wid, deviceId: 0 },
+		identifier: { name: identifier, deviceId: parsed.device || 0 },
 		identifierKey: generateSignalPubKey(accountSignatureKey)
 	}
+}
+
+export const createSignalIdentityAuto = (
+	identifier: string,
+	accountSignatureKey: Uint8Array
+): SignalIdentity => {
+	return createSignalIdentity(identifier, accountSignatureKey)
 }
 
 export const getPreKeys = async({ get }: SignalKeyStore, min: number, limit: number) => {
@@ -97,11 +135,11 @@ export const parseAndInjectE2ESessions = async(
 					const signedKey = getBinaryNodeChild(node, 'skey')!
 					const key = getBinaryNodeChild(node, 'key')!
 					const identity = getBinaryNodeChildBuffer(node, 'identity')!
-					const jid = node.attrs.jid
+					const identifier = node.attrs.lid || node.attrs.jid // Support both jid and lid attributes
 					const registrationId = getBinaryNodeChildUInt(node, 'registration', 4)
 
 					await repository.injectE2ESession({
-						jid,
+						jid: identifier, // Keep the same interface but accept both types
 						session: {
 							registrationId: registrationId!,
 							identityKey: generateSignalPubKey(identity),
@@ -115,15 +153,24 @@ export const parseAndInjectE2ESessions = async(
 	}
 }
 
-export const extractDeviceJids = (result: USyncQueryResultList[], myJid: string, excludeZeroDevices: boolean) => {
-	const { user: myUser, device: myDevice } = jidDecode(myJid)!
+export const extractDeviceJids = (result: USyncQueryResultList[], myIdentifier: string, excludeZeroDevices: boolean) => {
+	const myParsed = parseIdentifier(myIdentifier)
+	if(!myParsed) {
+		throw new Error(`Invalid identifier format: ${myIdentifier}`)
+	}
+
+	const { user: myUser, device: myDevice } = myParsed
 
 	const extracted: JidWithDevice[] = []
 
-
 	for(const userResult of result) {
 		const { devices, id } = userResult as { devices: ParsedDeviceInfo, id: string }
-		const { user } = jidDecode(id)!
+		const parsed = parseIdentifier(id)
+		if(!parsed) {
+			continue // Skip invalid identifiers
+		}
+
+		const { user } = parsed
 		const deviceList = devices?.deviceList as DeviceListData[]
 		if(Array.isArray(deviceList)) {
 			for(const { id: device, keyIndex } of deviceList) {
@@ -160,7 +207,7 @@ export const getNextPreKeys = async({ creds, keys }: AuthenticationState, count:
 	return { update, preKeys }
 }
 
-export const getNextPreKeysNode = async(state: AuthenticationState, count: number) => {
+export const getNextPreKeysNode = async(state: AuthenticationState, count: number, useLid = false) => {
 	const { creds } = state
 	const { update, preKeys } = await getNextPreKeys(state, count)
 
@@ -169,7 +216,7 @@ export const getNextPreKeysNode = async(state: AuthenticationState, count: numbe
 		attrs: {
 			xmlns: 'encrypt',
 			type: 'set',
-			to: S_WHATSAPP_NET,
+			to: getWhatsAppDomain(useLid),
 		},
 		content: [
 			{ tag: 'registration', attrs: { }, content: encodeBigEndian(creds.registrationId) },
@@ -181,4 +228,9 @@ export const getNextPreKeysNode = async(state: AuthenticationState, count: numbe
 	}
 
 	return { update, node }
+}
+
+export const getNextPreKeysNodeAuto = async(state: AuthenticationState, count: number, identifier?: string) => {
+	const useLid = identifier ? isLidIdentifier(identifier) : false
+	return getNextPreKeysNode(state, count, useLid)
 }

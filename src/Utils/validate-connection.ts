@@ -3,9 +3,10 @@ import { createHash } from 'crypto'
 import { waproto as proto } from '../../WAProto'
 import { KEY_BUNDLE_TYPE } from '../Defaults'
 import type { AuthenticationCreds, SignalCreds, SocketConfig } from '../Types'
-import { BinaryNode, getBinaryNodeChild, jidDecode, S_WHATSAPP_NET } from '../WABinary'
+import { BinaryNode, getBinaryNodeChild, jidDecode } from '../WABinary'
 import { Curve, hmacSign } from './crypto'
 import { encodeBigEndian } from './generics'
+import { getWhatsAppDomain, isLidIdentifier } from './lid-utils'
 import { createSignalIdentity } from './signal'
 
 const getUserAgent = (config: SocketConfig): proto.ClientPayload.IUserAgent => {
@@ -111,7 +112,8 @@ export const generateRegistrationNode = (
 
 export const configureSuccessfulPairing = (
 	stanza: BinaryNode,
-	{ advSecretKey, signedIdentityKey, signalIdentities }: Pick<AuthenticationCreds, 'advSecretKey' | 'signedIdentityKey' | 'signalIdentities'>
+	{ advSecretKey, signedIdentityKey, signalIdentities }: Pick<AuthenticationCreds, 'advSecretKey' | 'signedIdentityKey' | 'signalIdentities'>,
+	useLid?: boolean
 ) => {
 	const msgId = stanza.attrs.id
 
@@ -128,6 +130,9 @@ export const configureSuccessfulPairing = (
 
 	const bizName = businessNode?.attrs.name
 	const jid = deviceNode.attrs.jid
+
+	// Auto-detect LID usage if not explicitly specified
+	const shouldUseLid = useLid !== undefined ? useLid : isLidIdentifier(jid)
 
 	const { details, hmac } = proto.ADVSignedDeviceIdentityHMAC.decode(deviceIdentityNode.content as Buffer)
 	// check HMAC matches
@@ -156,7 +161,7 @@ export const configureSuccessfulPairing = (
 	const reply: BinaryNode = {
 		tag: 'iq',
 		attrs: {
-			to: S_WHATSAPP_NET,
+			to: getWhatsAppDomain(shouldUseLid),
 			type: 'result',
 			id: msgId,
 		},
@@ -189,6 +194,17 @@ export const configureSuccessfulPairing = (
 		creds: authUpdate,
 		reply
 	}
+}
+
+/**
+ * Auto-detecting variant of configureSuccessfulPairing that automatically determines
+ * whether to use LID or JID based on the device JID in the stanza
+ */
+export const configureSuccessfulPairingAuto = (
+	stanza: BinaryNode,
+	creds: Pick<AuthenticationCreds, 'advSecretKey' | 'signedIdentityKey' | 'signalIdentities'>
+) => {
+	return configureSuccessfulPairing(stanza, creds)
 }
 
 export const encodeSignedDeviceIdentity = (

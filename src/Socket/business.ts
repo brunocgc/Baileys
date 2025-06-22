@@ -1,6 +1,7 @@
 import { GetCatalogOptions, ProductCreate, ProductUpdate, SocketConfig } from '../Types'
 import { parseCatalogNode, parseCollectionsNode, parseOrderDetailsNode, parseProductNode, toProductNode, uploadingNecessaryImagesOfProduct } from '../Utils/business'
-import { BinaryNode, jidNormalizedUser, S_WHATSAPP_NET } from '../WABinary'
+import { getWhatsAppDomain, isLidIdentifier } from '../Utils/lid-utils'
+import { BinaryNode, jidNormalizedUser } from '../WABinary'
 import { getBinaryNodeChild } from '../WABinary/generic-utils'
 import { makeMessagesRecvSocket } from './messages-recv'
 
@@ -12,7 +13,7 @@ export const makeBusinessSocket = (config: SocketConfig) => {
 		waUploadToServer
 	} = sock
 
-	const getCatalog = async({ jid, limit, cursor }: GetCatalogOptions) => {
+	const getCatalog = async({ jid, limit, cursor }: GetCatalogOptions, useLid = false) => {
 		jid = jid || authState.creds.me?.id
 		jid = jidNormalizedUser(jid)
 
@@ -45,7 +46,7 @@ export const makeBusinessSocket = (config: SocketConfig) => {
 		const result = await query({
 			tag: 'iq',
 			attrs: {
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'get',
 				xmlns: 'w:biz:catalog'
 			},
@@ -63,13 +64,13 @@ export const makeBusinessSocket = (config: SocketConfig) => {
 		return parseCatalogNode(result)
 	}
 
-	const getCollections = async(jid?: string, limit = 51) => {
+	const getCollections = async(jid?: string, limit = 51, useLid = false) => {
 		jid = jid || authState.creds.me?.id
 		jid = jidNormalizedUser(jid)
 		const result = await query({
 			tag: 'iq',
 			attrs: {
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'get',
 				xmlns: 'w:biz:catalog',
 				'smax_id': '35'
@@ -109,11 +110,11 @@ export const makeBusinessSocket = (config: SocketConfig) => {
 		return parseCollectionsNode(result)
 	}
 
-	const getOrderDetails = async(orderId: string, tokenBase64: string) => {
+	const getOrderDetails = async(orderId: string, tokenBase64: string, useLid = false) => {
 		const result = await query({
 			tag: 'iq',
 			attrs: {
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'get',
 				xmlns: 'fb:thrift_iq',
 				'smax_id': '5'
@@ -155,14 +156,14 @@ export const makeBusinessSocket = (config: SocketConfig) => {
 		return parseOrderDetailsNode(result)
 	}
 
-	const productUpdate = async(productId: string, update: ProductUpdate) => {
+	const productUpdate = async(productId: string, update: ProductUpdate, useLid = false) => {
 		update = await uploadingNecessaryImagesOfProduct(update, waUploadToServer)
 		const editNode = toProductNode(productId, update)
 
 		const result = await query({
 			tag: 'iq',
 			attrs: {
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'set',
 				xmlns: 'w:biz:catalog'
 			},
@@ -193,7 +194,7 @@ export const makeBusinessSocket = (config: SocketConfig) => {
 		return parseProductNode(productNode!)
 	}
 
-	const productCreate = async(create: ProductCreate) => {
+	const productCreate = async(create: ProductCreate, useLid = false) => {
 		// ensure isHidden is defined
 		create.isHidden = !!create.isHidden
 		create = await uploadingNecessaryImagesOfProduct(create, waUploadToServer)
@@ -202,7 +203,7 @@ export const makeBusinessSocket = (config: SocketConfig) => {
 		const result = await query({
 			tag: 'iq',
 			attrs: {
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'set',
 				xmlns: 'w:biz:catalog'
 			},
@@ -233,11 +234,11 @@ export const makeBusinessSocket = (config: SocketConfig) => {
 		return parseProductNode(productNode!)
 	}
 
-	const productDelete = async(productIds: string[]) => {
+	const productDelete = async(productIds: string[], useLid = false) => {
 		const result = await query({
 			tag: 'iq',
 			attrs: {
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'set',
 				xmlns: 'w:biz:catalog'
 			},
@@ -268,6 +269,17 @@ export const makeBusinessSocket = (config: SocketConfig) => {
 		}
 	}
 
+	// Enhanced versions with automatic LID detection
+	const getCatalogAuto = async(options: GetCatalogOptions) => {
+		const useLid = isLidIdentifier(options.jid || authState.creds.me?.id)
+		return getCatalog(options, useLid)
+	}
+
+	const getCollectionsAuto = async(jid?: string, limit = 51) => {
+		const useLid = isLidIdentifier(jid || authState.creds.me?.id)
+		return getCollections(jid, limit, useLid)
+	}
+
 	return {
 		...sock,
 		logger: config.logger,
@@ -276,6 +288,8 @@ export const makeBusinessSocket = (config: SocketConfig) => {
 		getCollections,
 		productCreate,
 		productDelete,
-		productUpdate
+		productUpdate,
+		getCatalogAuto,
+		getCollectionsAuto
 	}
 }

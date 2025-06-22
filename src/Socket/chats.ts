@@ -5,9 +5,10 @@ import { DEFAULT_CACHE_TTLS, PROCESSABLE_HISTORY_TYPES } from '../Defaults'
 import { ALL_WA_PATCH_NAMES, BotListInfo, ChatModification, ChatMutation, ContactAction, LTHashState, MessageUpsertType, PresenceData, SocketConfig, WABusinessHoursConfig, WABusinessProfile, WAMediaUpload, WAMessage, WAPatchCreate, WAPatchName, WAPresence, WAPrivacyCallValue, WAPrivacyGroupAddValue, WAPrivacyMessagesValue, WAPrivacyOnlineValue, WAPrivacyValue, WAReadReceiptsValue } from '../Types'
 import { LabelActionBody } from '../Types/Label'
 import { chatModificationToAppPatch, ChatMutationMap, decodePatches, decodeSyncdSnapshot, encodeSyncdPatch, extractSyncdPatches, generateProfilePicture, getHistoryMsg, newLTHashState, processSyncAction } from '../Utils'
+import { getWhatsAppDomain, isLidIdentifier } from '../Utils/lid-utils'
 import { makeMutex } from '../Utils/make-mutex'
 import processMessage from '../Utils/process-message'
-import { BinaryNode, getBinaryNodeChild, getBinaryNodeChildren, jidNormalizedUser, reduceBinaryNodeToDictionary, S_WHATSAPP_NET } from '../WABinary'
+import { BinaryNode, getBinaryNodeChild, getBinaryNodeChildren, jidDecode, jidNormalizedUser, reduceBinaryNodeToDictionary } from '../WABinary'
 import { USyncQuery, USyncUser } from '../WAUSync'
 import { makeUSyncSocket } from './usync'
 const MAX_SYNC_ATTEMPTS = 2
@@ -53,13 +54,13 @@ export const makeChatsSocket = (config: SocketConfig) => {
 		return key
 	}
 
-	const fetchPrivacySettings = async(force = false) => {
+	const fetchPrivacySettings = async(force = false, useLid = false) => {
 		if(!privacySettings || force) {
 			const { content } = await query({
 				tag: 'iq',
 				attrs: {
 					xmlns: 'privacy',
-					to: S_WHATSAPP_NET,
+					to: getWhatsAppDomain(useLid),
 					type: 'get'
 				},
 				content: [
@@ -73,12 +74,12 @@ export const makeChatsSocket = (config: SocketConfig) => {
 	}
 
 	/** helper function to run a privacy IQ query */
-	const privacyQuery = async(name: string, value: string) => {
+	const privacyQuery = async(name: string, value: string, useLid = false) => {
 		await query({
 			tag: 'iq',
 			attrs: {
 				xmlns: 'privacy',
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'set'
 			},
 			content: [{
@@ -94,44 +95,44 @@ export const makeChatsSocket = (config: SocketConfig) => {
 		})
 	}
 
-	const updateMessagesPrivacy = async(value: WAPrivacyMessagesValue) => {
-		await privacyQuery('messages', value)
+	const updateMessagesPrivacy = async(value: WAPrivacyMessagesValue, useLid = false) => {
+		await privacyQuery('messages', value, useLid)
 	}
 
-	const updateCallPrivacy = async(value: WAPrivacyCallValue) => {
-		await privacyQuery('calladd', value)
+	const updateCallPrivacy = async(value: WAPrivacyCallValue, useLid = false) => {
+		await privacyQuery('calladd', value, useLid)
 	}
 
-	const updateLastSeenPrivacy = async(value: WAPrivacyValue) => {
-		await privacyQuery('last', value)
+	const updateLastSeenPrivacy = async(value: WAPrivacyValue, useLid = false) => {
+		await privacyQuery('last', value, useLid)
 	}
 
-	const updateOnlinePrivacy = async(value: WAPrivacyOnlineValue) => {
-		await privacyQuery('online', value)
+	const updateOnlinePrivacy = async(value: WAPrivacyOnlineValue, useLid = false) => {
+		await privacyQuery('online', value, useLid)
 	}
 
-	const updateProfilePicturePrivacy = async(value: WAPrivacyValue) => {
-		await privacyQuery('profile', value)
+	const updateProfilePicturePrivacy = async(value: WAPrivacyValue, useLid = false) => {
+		await privacyQuery('profile', value, useLid)
 	}
 
-	const updateStatusPrivacy = async(value: WAPrivacyValue) => {
-		await privacyQuery('status', value)
+	const updateStatusPrivacy = async(value: WAPrivacyValue, useLid = false) => {
+		await privacyQuery('status', value, useLid)
 	}
 
-	const updateReadReceiptsPrivacy = async(value: WAReadReceiptsValue) => {
-		await privacyQuery('readreceipts', value)
+	const updateReadReceiptsPrivacy = async(value: WAReadReceiptsValue, useLid = false) => {
+		await privacyQuery('readreceipts', value, useLid)
 	}
 
-	const updateGroupsAddPrivacy = async(value: WAPrivacyGroupAddValue) => {
-		await privacyQuery('groupadd', value)
+	const updateGroupsAddPrivacy = async(value: WAPrivacyGroupAddValue, useLid = false) => {
+		await privacyQuery('groupadd', value, useLid)
 	}
 
-	const updateDefaultDisappearingMode = async(duration: number) => {
+	const updateDefaultDisappearingMode = async(duration: number, useLid = false) => {
 		await query({
 			tag: 'iq',
 			attrs: {
 				xmlns: 'disappearing_mode',
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'set'
 			},
 			content: [{
@@ -143,12 +144,12 @@ export const makeChatsSocket = (config: SocketConfig) => {
 		})
 	}
 
-	const getBotListV2 = async() => {
+	const getBotListV2 = async(useLid = false) => {
 	  const resp = await query({
     		tag: 'iq',
     		attrs: {
      			xmlns: 'bot',
-     			to: S_WHATSAPP_NET,
+     			to: getWhatsAppDomain(useLid),
      			type: 'get'
     		},
     		content: [{
@@ -177,31 +178,62 @@ export const makeChatsSocket = (config: SocketConfig) => {
 	}
 
 	const onWhatsApp = async(...jids: string[]) => {
+		if(!jids || jids.length === 0) {
+			throw new Boom('At least one JID/phone number must be provided')
+		}
+
+		const validJids = jids.filter(jid => jid && typeof jid === 'string' && jid.trim().length > 0)
+
+		if(validJids.length === 0) {
+			throw new Boom('No valid JIDs/phone numbers provided')
+		}
+
 		const usyncQuery = new USyncQuery()
 			.withContactProtocol()
 			.withLIDProtocol()
 
-		for(const jid of jids) {
-			const withAt = jid.includes('@')
+		for(const jid of validJids) {
+			const trimmedJid = jid.trim()
+			const withAt = trimmedJid.includes('@')
+
 			if(withAt) {
-				const isLid = jid.endsWith('@lid')
+				const isLid = trimmedJid.endsWith('@lid')
 				if(isLid) {
-					usyncQuery.withUser(new USyncUser().withLid(jid))
+					usyncQuery.withUser(new USyncUser().withLid(trimmedJid))
 				} else {
-					usyncQuery.withUser(new USyncUser().withId(jid))
+					usyncQuery.withUser(new USyncUser().withId(trimmedJid))
 				}
 			} else {
-				const phone = `+${jid.replace('+', '').split('@')[0].split(':')[0]}`
+				const cleanPhone = trimmedJid.replace(/[^\d+]/g, '')
+				const phone = cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}`
+
 				usyncQuery.withUser(new USyncUser().withPhone(phone))
 			}
-	 	}
+		}
 
-		const results = await sock.executeUSyncQuery(usyncQuery)
+		try {
+			const results = await sock.executeUSyncQuery(usyncQuery)
 
-		if(results) {
-			return results.list.filter((a) => !!a.contact).map(({ contact, id, lid }) => ({ jid: id, exists: contact, lid }))
+			// Processar resultados
+			if(results?.list) {
+				return results.list
+					.filter((item) => !!item.contact)
+					.map(({ contact, id, lid }) => ({
+						jid: id,
+						exists: !!contact,
+						lid: lid || undefined
+					}))
+			}
+
+			return []
+		} catch(error) {
+			throw new Boom('Failed to check WhatsApp status', {
+				statusCode: 500,
+				data: { originalError: error, jids: validJids }
+			})
 		}
 	}
+
 
 	const fetchStatus = async(...jids: string[]) => {
 		const usyncQuery = new USyncQuery()
@@ -232,13 +264,19 @@ export const makeChatsSocket = (config: SocketConfig) => {
 	}
 
 	/** update the profile picture for yourself or a group */
-	const updateProfilePicture = async(jid: string, content: WAMediaUpload) => {
+	const updateProfilePicture = async(jid: string, content: WAMediaUpload, useLid = false) => {
 		let targetJid
 		if(!jid) {
 			throw new Boom('Illegal no-jid profile update. Please specify either your ID or the ID of the chat you wish to update')
 		}
 
-		if(jidNormalizedUser(jid) !== jidNormalizedUser(authState.creds.me!.id)) {
+		// Auto-detect LID if not explicitly specified
+		if(!useLid) {
+			useLid = isLidIdentifier(jid) || isLidIdentifier(authState.creds.me!.id) || isLidIdentifier(authState.creds.me!.lid)
+		}
+
+		const myIdentifier = useLid ? (authState.creds.me!.lid || authState.creds.me!.id) : authState.creds.me!.id
+		if(jidNormalizedUser(jid) !== jidNormalizedUser(myIdentifier)) {
 			targetJid = jidNormalizedUser(jid) // in case it is someone other than us
 		}
 
@@ -247,7 +285,7 @@ export const makeChatsSocket = (config: SocketConfig) => {
 			tag: 'iq',
 			attrs: {
 				target: targetJid,
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'set',
 				xmlns: 'w:profile:picture'
 			},
@@ -262,13 +300,19 @@ export const makeChatsSocket = (config: SocketConfig) => {
 	}
 
 	/** remove the profile picture for yourself or a group */
-	const removeProfilePicture = async(jid: string) => {
+	const removeProfilePicture = async(jid: string, useLid = false) => {
 		let targetJid
 		if(!jid) {
 			throw new Boom('Illegal no-jid profile update. Please specify either your ID or the ID of the chat you wish to update')
 		}
 
-		if(jidNormalizedUser(jid) !== jidNormalizedUser(authState.creds.me!.id)) {
+		// Auto-detect LID if not explicitly specified
+		if(!useLid) {
+			useLid = isLidIdentifier(jid) || isLidIdentifier(authState.creds.me!.id) || isLidIdentifier(authState.creds.me!.lid)
+		}
+
+		const myIdentifier = useLid ? (authState.creds.me!.lid || authState.creds.me!.id) : authState.creds.me!.id
+		if(jidNormalizedUser(jid) !== jidNormalizedUser(myIdentifier)) {
 			targetJid = jidNormalizedUser(jid) // in case it is someone other than us
 		}
 
@@ -276,7 +320,7 @@ export const makeChatsSocket = (config: SocketConfig) => {
 			tag: 'iq',
 			attrs: {
 				target: targetJid,
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'set',
 				xmlns: 'w:profile:picture'
 			}
@@ -284,11 +328,16 @@ export const makeChatsSocket = (config: SocketConfig) => {
 	}
 
 	/** update the profile status for yourself */
-	const updateProfileStatus = async(status: string) => {
+	const updateProfileStatus = async(status: string, useLid = false) => {
+		// Auto-detect LID if not explicitly specified
+		if(!useLid) {
+			useLid = isLidIdentifier(authState.creds.me!.id) || isLidIdentifier(authState.creds.me!.lid)
+		}
+
 		await query({
 			tag: 'iq',
 			attrs: {
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'set',
 				xmlns: 'status'
 			},
@@ -306,12 +355,17 @@ export const makeChatsSocket = (config: SocketConfig) => {
 		await chatModify({ pushNameSetting: name }, '')
 	}
 
-	const fetchBlocklist = async() => {
+	const fetchBlocklist = async(useLid = false) => {
+		// Auto-detect LID if not explicitly specified
+		if(!useLid) {
+			useLid = isLidIdentifier(authState.creds.me!.id) || isLidIdentifier(authState.creds.me!.lid)
+		}
+
 		const result = await query({
 			tag: 'iq',
 			attrs: {
 				xmlns: 'blocklist',
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'get'
 			}
 		})
@@ -321,12 +375,17 @@ export const makeChatsSocket = (config: SocketConfig) => {
 			.map(n => n.attrs.jid)
 	}
 
-	const updateBlockStatus = async(jid: string, action: 'block' | 'unblock') => {
+	const updateBlockStatus = async(jid: string, action: 'block' | 'unblock', useLid = false) => {
+		// Auto-detect LID if not explicitly specified
+		if(!useLid) {
+			useLid = isLidIdentifier(jid) || isLidIdentifier(authState.creds.me!.id) || isLidIdentifier(authState.creds.me!.lid)
+		}
+
 		await query({
 			tag: 'iq',
 			attrs: {
 				xmlns: 'blocklist',
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'set'
 			},
 			content: [
@@ -341,11 +400,16 @@ export const makeChatsSocket = (config: SocketConfig) => {
 		})
 	}
 
-	const getBusinessProfile = async(jid: string): Promise<WABusinessProfile | void> => {
+	const getBusinessProfile = async(jid: string, useLid = false): Promise<WABusinessProfile | void> => {
+		// Auto-detect LID if not explicitly specified
+		if(!useLid) {
+			useLid = isLidIdentifier(jid) || isLidIdentifier(authState.creds.me!.id) || isLidIdentifier(authState.creds.me!.lid)
+		}
+
 		const results = await query({
 			tag: 'iq',
 			attrs: {
-				to: 's.whatsapp.net',
+				to: getWhatsAppDomain(useLid),
 				xmlns: 'w:biz',
 				type: 'get'
 			},
@@ -387,12 +451,12 @@ export const makeChatsSocket = (config: SocketConfig) => {
 		}
 	}
 
-	const cleanDirtyBits = async(type: 'account_sync' | 'groups', fromTimestamp?: number | string) => {
+	const cleanDirtyBits = async(type: 'account_sync' | 'groups', fromTimestamp?: number | string, useLid = false) => {
 		logger.info({ fromTimestamp }, 'clean dirty bits ' + type)
 		await sendNode({
 			tag: 'iq',
 			attrs: {
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'set',
 				xmlns: 'urn:xmpp:whatsapp:dirty',
 				id: generateMessageTag(),
@@ -423,7 +487,7 @@ export const makeChatsSocket = (config: SocketConfig) => {
 		}
 	}
 
-	const resyncAppState = ev.createBufferedFunction(async(collections: readonly WAPatchName[], isInitialSync: boolean) => {
+	const resyncAppState = ev.createBufferedFunction(async(collections: readonly WAPatchName[], isInitialSync: boolean, useLid = false) => {
 		// we use this to determine which events to fire
 		// otherwise when we resync from scratch -- all notifications will fire
 		const initialVersionMap: { [T in WAPatchName]?: number } = {}
@@ -471,7 +535,7 @@ export const makeChatsSocket = (config: SocketConfig) => {
 					const result = await query({
 						tag: 'iq',
 						attrs: {
-							to: S_WHATSAPP_NET,
+							to: getWhatsAppDomain(useLid),
 							xmlns: 'w:sync:app:state',
 							type: 'set'
 						},
@@ -562,18 +626,43 @@ export const makeChatsSocket = (config: SocketConfig) => {
 		}
 	})
 
+	const profilePictureUrlAuto = async(jid: string, type: 'preview' | 'image' = 'preview', timeoutMs?: number) => {
+		const useLid = isLidIdentifier(jid)
+		return profilePictureUrl(jid, type, timeoutMs, useLid)
+	}
+
+	const cleanDirtyBitsAuto = async(type: 'account_sync' | 'groups', fromTimestamp?: number | string) => {
+		const useLid = isLidIdentifier(authState.creds.me?.id || '')
+		return cleanDirtyBits(type, fromTimestamp, useLid)
+	}
+
+	const fetchPropsAuto = async() => {
+		const useLid = isLidIdentifier(authState.creds.me?.id || '')
+		return fetchProps(useLid)
+	}
+
+	const resyncAppStateAuto = async(collections: readonly WAPatchName[], isInitialSync: boolean) => {
+		const useLid = isLidIdentifier(authState.creds.me?.id || '')
+		return resyncAppState(collections, isInitialSync, useLid)
+	}
+
+	const appPatchAuto = async(patchCreate: WAPatchCreate) => {
+		const useLid = isLidIdentifier(authState.creds.me?.id || '')
+		return appPatch(patchCreate, useLid)
+	}
+
 	/**
 	 * fetch the profile picture of a user/group
 	 * type = "preview" for a low res picture
 	 * type = "image for the high res picture"
 	 */
-	const profilePictureUrl = async(jid: string, type: 'preview' | 'image' = 'preview', timeoutMs?: number) => {
+	const profilePictureUrl = async(jid: string, type: 'preview' | 'image' = 'preview', timeoutMs?: number, useLid = false) => {
 		jid = jidNormalizedUser(jid)
 		const result = await query({
 			tag: 'iq',
 			attrs: {
 				target: jid,
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				type: 'get',
 				xmlns: 'w:profile:picture'
 			},
@@ -603,10 +692,13 @@ export const makeChatsSocket = (config: SocketConfig) => {
 				}
 			})
 		} else {
+			const { server } = jidDecode(toJid)!
+			const isLid = server === 'lid'
+
 			await sendNode({
 				tag: 'chatstate',
 				attrs: {
-					from: me.id,
+					from: isLid ? me.lid! : me.id,
 					to: toJid!,
 				},
 				content: [
@@ -678,7 +770,7 @@ export const makeChatsSocket = (config: SocketConfig) => {
 		}
 	}
 
-	const appPatch = async(patchCreate: WAPatchCreate) => {
+	const appPatch = async(patchCreate: WAPatchCreate, useLid = false) => {
 		const name = patchCreate.type
 		const myAppStateKeyId = authState.creds.myAppStateKeyId
 		if(!myAppStateKeyId) {
@@ -694,7 +786,7 @@ export const makeChatsSocket = (config: SocketConfig) => {
 					async() => {
 						logger.debug({ patch: patchCreate }, 'applying app patch')
 
-						await resyncAppState([name], false)
+						await resyncAppStateAuto([name], false)
 
 						const { [name]: currentSyncVersion } = await authState.keys.get('app-state-sync-version', [name])
 						initial = currentSyncVersion || newLTHashState()
@@ -710,7 +802,7 @@ export const makeChatsSocket = (config: SocketConfig) => {
 						const node: BinaryNode = {
 							tag: 'iq',
 							attrs: {
-								to: S_WHATSAPP_NET,
+								to: getWhatsAppDomain(useLid),
 								type: 'set',
 								xmlns: 'w:sync:app:state'
 							},
@@ -764,11 +856,11 @@ export const makeChatsSocket = (config: SocketConfig) => {
 	}
 
 	/** sending non-abt props may fix QR scan fail if server expects */
-	const fetchProps = async() => {
+	const fetchProps = async(useLid = false) => {
 		const resultNode = await query({
 			tag: 'iq',
 			attrs: {
-				to: S_WHATSAPP_NET,
+				to: getWhatsAppDomain(useLid),
 				xmlns: 'w',
 				type: 'get',
 			},
@@ -805,7 +897,7 @@ export const makeChatsSocket = (config: SocketConfig) => {
 	*/
 	const chatModify = (mod: ChatModification, jid: string) => {
 		const patch = chatModificationToAppPatch(mod, jid)
-		return appPatch(patch)
+		return appPatchAuto(patch)
 	}
 
 	/**
@@ -912,7 +1004,7 @@ export const makeChatsSocket = (config: SocketConfig) => {
 	 * */
 	const executeInitQueries = async() => {
 		await Promise.all([
-			fetchProps(),
+			fetchPropsAuto(),
 			fetchBlocklist(),
 			fetchPrivacySettings(),
 		])
@@ -983,7 +1075,7 @@ export const makeChatsSocket = (config: SocketConfig) => {
 		async function doAppStateSync() {
 			if(!authState.creds.accountSyncCounter) {
 				logger.info('doing initial app state sync')
-				await resyncAppState(ALL_WA_PATCH_NAMES, true)
+				await resyncAppStateAuto(ALL_WA_PATCH_NAMES, true)
 
 				const accountSyncCounter = (authState.creds.accountSyncCounter || 0) + 1
 				ev.emit('creds.update', { accountSyncCounter })
@@ -1007,7 +1099,7 @@ export const makeChatsSocket = (config: SocketConfig) => {
 			if(attrs.timestamp) {
 				let { lastAccountSyncTimestamp } = authState.creds
 				if(lastAccountSyncTimestamp) {
-					await cleanDirtyBits('account_sync', lastAccountSyncTimestamp)
+					await cleanDirtyBitsAuto('account_sync', lastAccountSyncTimestamp)
 				}
 
 				lastAccountSyncTimestamp = +attrs.timestamp
@@ -1050,11 +1142,15 @@ export const makeChatsSocket = (config: SocketConfig) => {
 		getBotListV2,
 		processingMutex,
 		fetchPrivacySettings,
+		fetchProps,
+		fetchPropsAuto,
 		upsertMessage,
 		appPatch,
+		appPatchAuto,
 		sendPresenceUpdate,
 		presenceSubscribe,
 		profilePictureUrl,
+		profilePictureUrlAuto,
 		onWhatsApp,
 		fetchBlocklist,
 		fetchStatus,
@@ -1075,8 +1171,10 @@ export const makeChatsSocket = (config: SocketConfig) => {
 		updateDefaultDisappearingMode,
 		getBusinessProfile,
 		resyncAppState,
+		resyncAppStateAuto,
 		chatModify,
 		cleanDirtyBits,
+		cleanDirtyBitsAuto,
 		addOrEditContact,
 		removeContact,
 		addLabel,

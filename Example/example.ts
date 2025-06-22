@@ -8,9 +8,8 @@ import fs from 'fs'
 import P from 'pino'
 
 const logger = P({ timestamp: () => `,"time":"${new Date().toJSON()}"` }, P.destination('./wa-logs.txt'))
-logger.level = 'trace'
+logger.level = 'silent'
 
-const doReplies = process.argv.includes('--do-reply')
 const usePairingCode = process.argv.includes('--use-pairing-code')
 
 // external map to store retry counts of messages when decryption/encryption fails
@@ -33,7 +32,6 @@ const startSock = async() => {
 	const sock = makeWASocket({
 		version,
 		logger,
-		printQRInTerminal: !usePairingCode,
 		auth: {
 			creds: state.creds,
 			/** caching makes the store faster to send/recv messages */
@@ -118,6 +116,11 @@ const startSock = async() => {
 				}
 
 				console.log('connection update', update)
+
+				if(update.qr) {
+					const website = "https://quickchart.io/qr?text=" + encodeURIComponent(update.qr)
+					console.log('QR code received, open in browser:', website)
+				}
 			}
 
 			// credentials updated -- save them
@@ -154,46 +157,6 @@ const startSock = async() => {
 
 				if(upsert.type === 'notify') {
 					for (const msg of upsert.messages) {
-						//TODO: More built-in implementation of this
-						/* if (
-							msg.message?.protocolMessage?.type ===
-							proto.Message.ProtocolMessage.Type.HISTORY_SYNC_NOTIFICATION
-						  ) {
-							const historySyncNotification = getHistoryMsg(msg.message)
-							if (
-							  historySyncNotification?.syncType ==
-							  proto.HistorySync.HistorySyncType.ON_DEMAND
-							) {
-							  const { messages } =
-								await downloadAndProcessHistorySyncNotification(
-								  historySyncNotification,
-								  {}
-								)
-
-
-								const chatId = onDemandMap.get(
-									historySyncNotification!.peerDataRequestSessionId!
-								)
-
-								console.log(messages)
-
-							  onDemandMap.delete(
-								historySyncNotification!.peerDataRequestSessionId!
-							  )
-
-							  /*
-								// 50 messages is the limit imposed by whatsapp
-								//TODO: Add ratelimit of 7200 seconds
-								//TODO: Max retries 10
-								const messageId = await sock.fetchMessageHistory(
-									50,
-									oldestMessageKey,
-									oldestMessageTimestamp
-								)
-								onDemandMap.set(messageId, chatId)
-							}
-						  } */
-
 						if (msg.message?.conversation || msg.message?.extendedTextMessage?.text) {
 							const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text
 							if (text == "requestPlaceholder" && !upsert.requestId) {
@@ -208,13 +171,15 @@ const startSock = async() => {
 								const messageId = await sock.fetchMessageHistory(50, msg.key, msg.messageTimestamp!)
 								console.log('requested on-demand sync, id=', messageId)
 							}
-						}
 
-						if(!msg.key.fromMe && doReplies && !isJidNewsletter(msg.key?.remoteJid!)) {
-
-							console.log('replying to', msg.key.remoteJid)
-							await sock!.readMessages([msg.key])
-							await sendMessageWTyping({ text: 'Hello there!' }, msg.key.remoteJid!)
+							if (text == "lid") {
+								const lid = sock.user;
+								const phone = msg.key.remoteJid!.split('@')[0];
+								const lidUser = await sock.onWhatsApp(phone);
+								console.log('latest id is', lidUser, 'and my lid is', lid);
+								await sock!.readMessages([msg.key])
+								await sendMessageWTyping({ text: `Seu lid: ${JSON.stringify(lidUser[0])}\nMeu lid: ${JSON.stringify(lid)}` }, msg.key.remoteJid!)
+							}
 						}
 					}
 				}
