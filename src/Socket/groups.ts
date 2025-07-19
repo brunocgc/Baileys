@@ -349,11 +349,11 @@ export const extractGroupMetadata = (result: BinaryNode) => {
 		subject: group.attrs.subject!,
 		subjectOwner: group.attrs.s_o,
 		subjectTime: +group.attrs.s_t!,
-		size: getBinaryNodeChildren(group, 'participant').length,
+		size: group.attrs.size ? +group.attrs.size : getBinaryNodeChildren(group, 'participant').length,
 		creation: +group.attrs.creation!,
 		owner: group.attrs.creator ? jidNormalizedUser(group.attrs.creator) : undefined,
 		ownerJid: group.attrs.creator_pn ? jidNormalizedUser(group.attrs.creator_pn) : undefined,
-		ownerCountryCode: group.attrs.creator_country_code!,
+		ownerCountryCode: group.attrs.creator_country_code,
 		desc,
 		descId,
 		descOwner,
@@ -380,3 +380,5 @@ export const extractGroupMetadata = (result: BinaryNode) => {
 	}
 	return metadata
 }
+
+export type GroupsSocket = ReturnType<typeof makeGroupsSocket>

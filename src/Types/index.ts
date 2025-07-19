@@ -1,4 +1,4 @@
- 
+
 export * from './Auth'
 export * from './Call'
 export * from './Chat'
@@ -10,6 +10,7 @@ export * from './Product'
 export * from './Signal'
 export * from './Socket'
 export * from './State'
+export * from './Newsletter'
 
 import type { AuthenticationState } from './Auth'
 import type { SocketConfig } from './Socket'

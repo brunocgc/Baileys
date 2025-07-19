@@ -7,6 +7,7 @@ import { getUrlInfo } from '../Utils/link-preview'
 import { areJidsSameUser, type BinaryNode, type BinaryNodeAttributes, getBinaryNodeChild, getBinaryNodeChildren, isJidGroup, isJidUser, jidDecode, jidEncode, jidNormalizedUser, type JidWithDevice, S_WHATSAPP_NET } from '../WABinary'
 import { USyncQuery, USyncUser } from '../WAUSync'
 import { makeGroupsSocket } from './groups'
+import { makeNewsletterSocket, type NewsletterSocket } from './newsletter'
 import ListType = waproto.Message.ListMessage.ListType;
 
 export const makeMessagesSocket = (config: SocketConfig) => {
@@ -18,7 +19,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		patchMessageBeforeSending,
 		cachedGroupMetadata,
 	} = config
-	const sock = makeGroupsSocket(config)
+	const sock: NewsletterSocket = makeNewsletterSocket(makeGroupsSocket(config))
 	const {
 		ev,
 		authState,
@@ -277,7 +278,7 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 		const msgId = await relayMessage(meJid, protocolMessage, {
 			additionalAttributes: {
 				category: 'peer',
-				 
+
 				push_priority: 'high_force',
 			},
 		})
