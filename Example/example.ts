@@ -1,7 +1,7 @@
-import { Boom } from '@hapi/boom'
+import type { Boom } from '@hapi/boom'
 import readline from 'readline'
 import { randomBytes } from 'crypto'
-import makeWASocket, { AnyMessageContent, BinaryInfo, delay, DisconnectReason, encodeWAM, fetchLatestBaileysVersion, getAggregateVotesInPollMessage, isJidNewsletter, makeCacheableSignalKeyStore, waproto, useMultiFileAuthState, WAMessageContent, WAMessageKey } from '../src'
+import makeWASocket, { type AnyMessageContent, BinaryInfo, delay, DisconnectReason, encodeWAM, fetchLatestBaileysVersion, isJidNewsletter, makeCacheableSignalKeyStore, waproto, useMultiFileAuthState, type WAMessageContent, type WAMessageKey } from '../src'
 //import MAIN_LOGGER from '../src/Utils/logger'
 import open from 'open'
 import fs from 'fs'
@@ -142,14 +142,14 @@ const startSock = async () => {
 								try {
 									const lid = sock.user;
 									const phone = msg.key.remoteJid!.split('@')[0];
-									const lidUser = await sock.onWhatsApp(phone);
+									const lidUser = await sock.onWhatsApp(phone!);
 									console.log('latest id is', lidUser, 'and my lid is', lid);
 									await sock!.readMessages([msg.key]);
 
 									// Verificar se lidUser existe e tem pelo menos um elemento
 									if (lidUser && lidUser.length > 0) {
 										// Usar o lid se existir e não for vazio, caso contrário usar o remoteJid original
-										const userLid = lidUser[0].lid;
+										const userLid = lidUser[0]?.lid;
 										const dados: string = (userLid && typeof userLid === 'string' && userLid !== '') ? userLid : msg.key.remoteJid!;
 										console.log(`dados ${dados}`);
 
@@ -174,7 +174,7 @@ const startSock = async () => {
 								try {
 									const lid = sock.user;
 									const phone = msg.key.remoteJid!.split('@')[0];
-									const lidUser = await sock.onWhatsApp(phone);
+									const lidUser = await sock.onWhatsApp(phone!);
 									// console.log('latest id is', lidUser, 'and my lid is', lid);
 									await sock!.readMessages([msg.key]);
 

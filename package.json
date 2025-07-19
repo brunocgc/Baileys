@@ -22,7 +22,7 @@
   ],
   "scripts": {
     "build:tsc": "tsc",
-    "example": "node --inspect -r ts-node/register Example/example.ts",
+    "example": "npx tsx Example/example.ts",
     "lint": "eslint src --ext .js,.ts",
     "lint:fix": "eslint src --ext .js,.ts --fix",
     "prepack": "tsc",
