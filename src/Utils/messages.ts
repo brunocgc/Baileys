@@ -617,14 +617,14 @@ export const generateWAMessageFromContent = (
 
 	const innerMessage = normalizeMessageContent(message)!
 	const key = getContentType(innerMessage)! as Exclude<keyof waproto.IMessage, 'conversation'>
-	const timestamp = unixTimestampSeconds(options.timestamp)
+	const timestamp: number = unixTimestampSeconds(options.timestamp)
 	const { quoted, userJid } = options
 
 	if(quoted) {
 		const participant = quoted.key.fromMe ? userJid : (quoted.participant || quoted.key.participant || quoted.key.remoteJid)
 
-		let quotedMsg = normalizeMessageContent(quoted.message)!
-		const msgType = getContentType(quotedMsg)!
+		let quotedMsg: waproto.IMessage = normalizeMessageContent(quoted.message)!
+		const msgType: keyof waproto.Message = getContentType(quotedMsg)!
 		// strip any redundant properties
 		quotedMsg = waproto.Message.fromObject({ [msgType]: quotedMsg[msgType] })
 
@@ -703,7 +703,7 @@ export const generateWAMessage = async (
 /** Get the key to access the true type of content */
 export const getContentType = (content: waproto.IMessage | undefined) => {
 	if(content) {
-		const keys = Object.keys(content)
+		const keys: string[] = Object.keys(content)
 		const key = keys.find(k => (k === 'conversation' || k.includes('Message')) && k !== 'senderKeyDistributionMessage')
 		return key as keyof typeof content
 	}
@@ -827,7 +827,7 @@ export const updateMessageWithPollUpdate = (
 	msg: Pick<WAMessage, 'pollUpdates'>,
 	update: waproto.IPollUpdate
 ) => {
-	const authorID = getKeyAuthor(update.pollUpdateMessageKey)
+	const authorID: string = getKeyAuthor(update.pollUpdateMessageKey)
 
 	const reactions = (msg.pollUpdates || [])
 		.filter(r => getKeyAuthor(r.pollUpdateMessageKey) !== authorID)
@@ -855,7 +855,7 @@ export function getAggregateVotesInPollMessage(
 ) {
 	const opts = message?.pollCreationMessage?.options || message?.pollCreationMessageV2?.options || message?.pollCreationMessageV3?.options || []
 	const voteHashMap = opts.reduce((acc, opt) => {
-		const hash = sha256(Buffer.from(opt.optionName || '')).toString()
+		const hash: string = sha256(Buffer.from(opt.optionName || '')).toString()
 		acc[hash] = {
 			name: opt.optionName || '',
 			voters: []
@@ -870,7 +870,7 @@ export function getAggregateVotesInPollMessage(
 		}
 
 		for(const option of vote.selectedOptions || []) {
-			const hash = option.toString()
+			const hash: string = option.toString()
 			let data = voteHashMap[hash]
 			if(!data) {
 				voteHashMap[hash] = {
@@ -915,7 +915,7 @@ type DownloadMediaMessageContext = {
 	logger: ILogger
 }
 
-const REUPLOAD_REQUIRED_STATUS = [410, 404]
+const REUPLOAD_REQUIRED_STATUS: number[] = [410, 404]
 
 /**
  * Downloads the given message. Throws an error if it's not a media message
