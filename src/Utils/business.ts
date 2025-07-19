@@ -3,8 +3,8 @@ import { createHash } from 'crypto'
 import { createWriteStream, promises as fs } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { CatalogCollection, CatalogStatus, OrderDetails, OrderProduct, Product, ProductCreate, ProductUpdate, WAMediaUpload, WAMediaUploadFunction } from '../Types'
-import { BinaryNode, getBinaryNodeChild, getBinaryNodeChildren, getBinaryNodeChildString } from '../WABinary'
+import type { CatalogCollection, CatalogStatus, OrderDetails, OrderProduct, Product, ProductCreate, ProductUpdate, WAMediaUpload, WAMediaUploadFunction } from '../Types'
+import { type BinaryNode, getBinaryNodeChild, getBinaryNodeChildren, getBinaryNodeChildString } from '../WABinary'
 import { generateMessageIDV2 } from './generics'
 import { getStream, getUrlFromDirectPath } from './messages-media'
 
@@ -221,7 +221,7 @@ export async function uploadingNecessaryImagesOfProduct<T extends ProductUpdate 
 /**
  * Uploads images not already uploaded to WA's servers
  */
-export const uploadingNecessaryImages = async(
+export const uploadingNecessaryImages = async (
 	images: WAMediaUpload[],
 	waUploadToServer: WAMediaUploadFunction,
 	timeoutMs = 30_000

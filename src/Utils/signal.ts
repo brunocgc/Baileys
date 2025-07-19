@@ -1,9 +1,10 @@
+ 
 import { chunk } from 'lodash'
 import { KEY_BUNDLE_TYPE } from '../Defaults'
-import { SignalRepository } from '../Types'
-import { AuthenticationCreds, AuthenticationState, KeyPair, SignalIdentity, SignalKeyStore, SignedKeyPair } from '../Types/Auth'
-import { assertNodeErrorFree, BinaryNode, getBinaryNodeChild, getBinaryNodeChildBuffer, getBinaryNodeChildren, getBinaryNodeChildUInt, jidDecode, JidWithDevice, S_WHATSAPP_NET } from '../WABinary'
-import { DeviceListData, ParsedDeviceInfo, USyncQueryResultList } from '../WAUSync'
+import type { SignalRepository } from '../Types'
+import type { AuthenticationCreds, AuthenticationState, KeyPair, SignalIdentity, SignalKeyStore, SignedKeyPair } from '../Types/Auth'
+import { assertNodeErrorFree, type BinaryNode, getBinaryNodeChild, getBinaryNodeChildBuffer, getBinaryNodeChildren, getBinaryNodeChildUInt, jidDecode, type JidWithDevice, S_WHATSAPP_NET } from '../WABinary'
+import type { DeviceListData, ParsedDeviceInfo, USyncQueryResultList } from '../WAUSync'
 import { Curve, generateSignalPubKey } from './crypto'
 import { encodeBigEndian } from './generics'
 
@@ -17,7 +18,7 @@ export const createSignalIdentity = (
 	}
 }
 
-export const getPreKeys = async({ get }: SignalKeyStore, min: number, limit: number) => {
+export const getPreKeys = async ({ get }: SignalKeyStore, min: number, limit: number) => {
 	const idList: string[] = []
 	for(let id = min; id < limit;id++) {
 		idList.push(id.toString())
@@ -67,7 +68,7 @@ export const xmppPreKey = (pair: KeyPair, id: number): BinaryNode => (
 	}
 )
 
-export const parseAndInjectE2ESessions = async(
+export const parseAndInjectE2ESessions = async (
 	node: BinaryNode,
 	repository: SignalRepository
 ) => {
@@ -101,7 +102,7 @@ export const parseAndInjectE2ESessions = async(
 					const registrationId = getBinaryNodeChildUInt(node, 'registration', 4)
 
 					await repository.injectE2ESession({
-						jid,
+						jid: jid!,
 						session: {
 							registrationId: registrationId!,
 							identityKey: generateSignalPubKey(identity),
@@ -145,7 +146,7 @@ export const extractDeviceJids = (result: USyncQueryResultList[], myJid: string,
  * get the next N keys for upload or processing
  * @param count number of pre-keys to get or generate
  */
-export const getNextPreKeys = async({ creds, keys }: AuthenticationState, count: number) => {
+export const getNextPreKeys = async ({ creds, keys }: AuthenticationState, count: number) => {
 	const { newPreKeys, lastPreKeyId, preKeysRange } = generateOrGetPreKeys(creds, count)
 
 	const update: Partial<AuthenticationCreds> = {
@@ -160,7 +161,7 @@ export const getNextPreKeys = async({ creds, keys }: AuthenticationState, count:
 	return { update, preKeys }
 }
 
-export const getNextPreKeysNode = async(state: AuthenticationState, count: number) => {
+export const getNextPreKeysNode = async (state: AuthenticationState, count: number) => {
 	const { creds } = state
 	const { update, preKeys } = await getNextPreKeys(state, count)
 
@@ -175,7 +176,7 @@ export const getNextPreKeysNode = async(state: AuthenticationState, count: numbe
 			{ tag: 'registration', attrs: { }, content: encodeBigEndian(creds.registrationId) },
 			{ tag: 'type', attrs: { }, content: KEY_BUNDLE_TYPE },
 			{ tag: 'identity', attrs: { }, content: creds.signedIdentityKey.public },
-			{ tag: 'list', attrs: { }, content: Object.keys(preKeys).map(k => xmppPreKey(preKeys[+k], +k)) },
+			{ tag: 'list', attrs: { }, content: Object.keys(preKeys).map(k => xmppPreKey(preKeys[+k]!, +k)) },
 			xmppSignedPreKey(creds.signedPreKey)
 		]
 	}

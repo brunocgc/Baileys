@@ -2,7 +2,7 @@ import AsyncLock from 'async-lock'
 import { mkdir, readFile, stat, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { waproto } from '../../WAProto'
-import { AuthenticationCreds, AuthenticationState, SignalDataTypeMap } from '../Types'
+import type { AuthenticationCreds, AuthenticationState, SignalDataTypeMap } from '../Types'
 import { initAuthCreds } from './auth-utils'
 import { BufferJSON } from './generics'
 import logger from './logger'
@@ -21,8 +21,8 @@ const fileLock = new AsyncLock({ maxPending: Infinity })
  * Again, I wouldn't endorse this for any production level use other than perhaps a bot.
  * Would recommend writing an auth state for use with a proper SQL or No-SQL DB
  * */
-export const useMultiFileAuthState = async(folder: string): Promise<{ state: AuthenticationState, saveCreds: () => Promise<void> }> => {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const useMultiFileAuthState = async (folder: string): Promise<{ state: AuthenticationState, saveCreds: () => Promise<void> }> => {
+	 
 	const writeData = (data: any, file: string) => {
 		const filePath = join(folder, fixFileName(file)!)
 		return fileLock.acquire(
@@ -31,7 +31,7 @@ export const useMultiFileAuthState = async(folder: string): Promise<{ state: Aut
 		)
 	}
 
-	const readData = async(file: string) => {
+	const readData = async (file: string) => {
 		try {
 			const filePath = join(folder, fixFileName(file)!)
 			const data = await fileLock.acquire(
@@ -39,7 +39,7 @@ export const useMultiFileAuthState = async(folder: string): Promise<{ state: Aut
 				() => readFile(filePath, { encoding: 'utf-8' })
 			)
 			return JSON.parse(data, BufferJSON.reviver)
-		} catch(error) {
+		} catch(error: any) {
 			if(error && (error.code === 'ENOENT' || error.errno === -4058)) {
 				return null
 			}
@@ -49,7 +49,7 @@ export const useMultiFileAuthState = async(folder: string): Promise<{ state: Aut
 		}
 	}
 
-	const removeData = async(file: string) => {
+	const removeData = async (file: string) => {
 		try {
 			const filePath = join(folder, fixFileName(file)!)
 			await fileLock.acquire(
@@ -78,7 +78,7 @@ export const useMultiFileAuthState = async(folder: string): Promise<{ state: Aut
 		state: {
 			creds,
 			keys: {
-				get: async(type, ids) => {
+				get: async (type, ids) => {
 					const data: { [_: string]: SignalDataTypeMap[typeof type] } = { }
 					await Promise.all(
 						ids.map(
@@ -95,11 +95,11 @@ export const useMultiFileAuthState = async(folder: string): Promise<{ state: Aut
 
 					return data
 				},
-				set: async(data) => {
+				set: async (data) => {
 					const tasks: Promise<void>[] = []
 					for(const category in data) {
-						for(const id in data[category]) {
-							const value = data[category][id]
+						for(const id in data[category as keyof SignalDataTypeMap]) {
+							const value = data[category as keyof SignalDataTypeMap]![id]
 							const file = `${category}-${id}.json`
 							tasks.push(value ? writeData(value, file) : removeData(file))
 						}

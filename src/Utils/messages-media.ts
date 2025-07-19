@@ -1,5 +1,5 @@
 import { Boom } from '@hapi/boom'
-import axios, { AxiosRequestConfig } from 'axios'
+import axios, { type AxiosRequestConfig } from 'axios'
 import { exec } from 'child_process'
 import * as Crypto from 'crypto'
 import { once } from 'events'
@@ -12,15 +12,15 @@ import { Readable, Transform } from 'stream'
 import { URL } from 'url'
 import { waproto } from '../../WAProto'
 import { DEFAULT_ORIGIN, MEDIA_HKDF_KEY_MAPPING, MEDIA_PATH_MAP } from '../Defaults'
-import { BaileysEventMap, DownloadableMessage, MediaConnInfo, MediaDecryptionKeyInfo, MediaType, MessageType, SocketConfig, WAGenericMediaMessage, WAMediaUpload, WAMediaUploadFunction, WAMessageContent } from '../Types'
-import { BinaryNode, getBinaryNodeChild, getBinaryNodeChildBuffer, jidNormalizedUser } from '../WABinary'
+import type { BaileysEventMap, DownloadableMessage, MediaConnInfo, MediaDecryptionKeyInfo, MediaType, MessageType, SocketConfig, WAGenericMediaMessage, WAMediaUpload, WAMediaUploadFunction, WAMessageContent } from '../Types'
+import { type BinaryNode, getBinaryNodeChild, getBinaryNodeChildBuffer, jidNormalizedUser } from '../WABinary'
 import { aesDecryptGCM, aesEncryptGCM, hkdf } from './crypto'
 import { generateMessageIDV2 } from './generics'
-import logger, { ILogger } from './logger'
+import logger, { type ILogger } from './logger'
 
 const getTmpFilesDirectory = () => tmpdir()
 
-const getImageProcessingLibrary = async() => {
+const getImageProcessingLibrary = async () => {
 	const [jimp, sharp] = await Promise.all([import('jimp').catch(() => { }), import('sharp').catch(() => { })])
 
 	if(sharp) {
@@ -39,7 +39,7 @@ export const hkdfInfoKey = (type: MediaType) => {
 	return `WhatsApp ${hkdfInfo} Keys`
 }
 
-export const getRawMediaUploadData = async(media: WAMediaUpload, mediaType: MediaType, logger?: ILogger) => {
+export const getRawMediaUploadData = async (media: WAMediaUpload, mediaType: MediaType, logger?: ILogger) => {
 	const { stream } = await getStream(media)
 	logger?.debug('got stream for raw upload')
 
@@ -67,7 +67,7 @@ export const getRawMediaUploadData = async(media: WAMediaUpload, mediaType: Medi
 			fileSha256,
 			fileLength
 		}
-	} catch(error) {
+	} catch(error: any) {
 		fileWriteStream.destroy()
 		stream.destroy()
 		try {
@@ -100,7 +100,7 @@ export async function getMediaKeys(buffer: Uint8Array | string | null | undefine
 }
 
 /** Extracts video thumb using FFMPEG */
-const extractVideoThumb = async(
+const extractVideoThumb = async (
 	path: string,
 	destPath: string,
 	time: string,
@@ -116,7 +116,7 @@ const extractVideoThumb = async(
 	})
 })
 
-export const extractImageThumb = async(bufferOrFilePath: Readable | Buffer | string, width = 32) => {
+export const extractImageThumb = async (bufferOrFilePath: Readable | Buffer | string, width = 32) => {
 	if(bufferOrFilePath instanceof Readable) {
 		bufferOrFilePath = await toBuffer(bufferOrFilePath)
 	}
@@ -138,7 +138,7 @@ export const extractImageThumb = async(bufferOrFilePath: Readable | Buffer | str
 			},
 		}
 	} else if('jimp' in lib && typeof lib.jimp?.Jimp === 'object') {
-		const jimp = await lib.jimp.default.Jimp.read(bufferOrFilePath)
+		const jimp = await (lib.jimp.Jimp as any).read(bufferOrFilePath)
 
 		const dimensions = {
 			width: jimp.width,
@@ -165,7 +165,7 @@ export const encodeBase64EncodedStringForUpload = (b64: string) => (
 	)
 )
 
-export const generateProfilePicture = async(mediaUpload: WAMediaUpload, dimensions?: { w: number; h: number }) => {
+export const generateProfilePicture = async (mediaUpload: WAMediaUpload, dimensions?: { w: number; h: number }) => {
 
 	const { w = 640, h = 640 } = dimensions || {}
 	let bufferOrFilePath: Buffer | string
@@ -187,7 +187,7 @@ export const generateProfilePicture = async(mediaUpload: WAMediaUpload, dimensio
 			})
 			.toBuffer()
 	} else if('jimp' in lib && typeof lib.jimp?.Jimp === 'object') {
-		const jimp = await lib.jimp.default.Jimp.read(bufferOrFilePath)
+		const jimp = await (lib.jimp.Jimp as any).read(bufferOrFilePath)
 		const min = Math.min(jimp.width, jimp.height)
 		const cropped = jimp.crop({ x: 0, y: 0, w: min, h: min })
 
@@ -278,7 +278,7 @@ export const toReadable = (buffer: Buffer) => {
 	return readable
 }
 
-export const toBuffer = async(stream: Readable) => {
+export const toBuffer = async (stream: Readable) => {
 	const chunks: Buffer[] = []
 	for await (const chunk of stream) {
 		chunks.push(chunk)
@@ -288,7 +288,7 @@ export const toBuffer = async(stream: Readable) => {
 	return Buffer.concat(chunks)
 }
 
-export const getStream = async(item: WAMediaUpload, opts?: AxiosRequestConfig) => {
+export const getStream = async (item: WAMediaUpload, opts?: AxiosRequestConfig) => {
 	if(Buffer.isBuffer(item)) {
 		return { stream: toReadable(item), type: 'buffer' } as const
 	}
@@ -300,7 +300,7 @@ export const getStream = async(item: WAMediaUpload, opts?: AxiosRequestConfig) =
 	const urlStr: string = item.url.toString()
 
 	if(urlStr.startsWith('data:')) {
-		const buffer = Buffer.from(urlStr.split(',')[1], 'base64')
+		const buffer = Buffer.from(urlStr.split(',')[1]!, 'base64')
 		return { stream: toReadable(buffer), type: 'buffer' } as const
 	}
 
@@ -338,8 +338,8 @@ export async function generateThumbnail(
 			thumbnail = buff.toString('base64')
 
 			await fs.unlink(imgFilename)
-		} catch(err) {
-			options.logger?.debug('could not generate video thumb: ' + err)
+		} catch(error: any) {
+			options.logger?.debug('could not generate video thumb: ' + error)
 		}
 	}
 
@@ -349,7 +349,7 @@ export async function generateThumbnail(
 	}
 }
 
-export const getHttpStream = async(url: string | URL, options: AxiosRequestConfig & { isStream?: true } = {}) => {
+export const getHttpStream = async (url: string | URL, options: AxiosRequestConfig & { isStream?: true } = {}) => {
 	const fetched = await axios.get(url.toString(), { ...options, responseType: 'stream' })
 	return fetched.data as Readable
 }
@@ -360,7 +360,7 @@ type EncryptedStreamOptions = {
 	opts?: AxiosRequestConfig
 }
 
-export const encryptedStream = async(
+export const encryptedStream = async (
 	media: WAMediaUpload,
 	mediaType: MediaType,
 	{ logger, saveOriginalFileIfRequired, opts }: EncryptedStreamOptions = {}
@@ -452,7 +452,7 @@ export const encryptedStream = async(
 			fileSha256,
 			fileLength
 		}
-	} catch(error) {
+	} catch(error: any) {
 		// destroy all streams with error
 		encFileWriteStream.destroy()
 		originalFileStream?.destroy?.()
@@ -467,8 +467,8 @@ export const encryptedStream = async(
 			if(originalFilePath) {
 				await fs.unlink(originalFilePath)
 			}
-		} catch(err) {
-			logger?.error({ err }, 'failed deleting tmp files')
+		} catch(error: any) {
+			logger?.error({ error }, 'failed deleting tmp files')
 		}
 
 		throw error
@@ -490,7 +490,7 @@ export type MediaDownloadOptions = {
 
 export const getUrlFromDirectPath = (directPath: string) => `https://${DEF_HOST}${directPath}`
 
-export const downloadContentFromMessage = async(
+export const downloadContentFromMessage = async (
 	{ mediaKey, directPath, url }: DownloadableMessage,
 	type: MediaType,
 	opts: MediaDownloadOptions = {}
@@ -510,7 +510,7 @@ export const downloadContentFromMessage = async(
  * Decrypts and downloads an AES256-CBC encrypted file given the keys.
  * Assumes the SHA256 of the plaintext is appended to the end of the ciphertext
  * */
-export const downloadEncryptedContent = async(
+export const downloadEncryptedContent = async (
 	downloadUrl: string,
 	{ cipherKey, iv }: MediaDecryptionKeyInfo,
 	{ startByte, endByte, options }: MediaDownloadOptions = {}
@@ -553,7 +553,7 @@ export const downloadEncryptedContent = async(
 
 	let remainingBytes = Buffer.from([])
 
-	let aes: Crypto.Decipher
+	let aes: Crypto.Decipheriv
 
 	const pushBytes = (bytes: Buffer, push: (bytes: Buffer) => void) => {
 		if(startByte || endByte) {
@@ -589,7 +589,7 @@ export const downloadEncryptedContent = async(
 						if(endByte) {
 							aes.setAutoPadding(false)
 						}
-					} catch(error) {
+					} catch(error: any) {
 						callback(new Error(`Falha ao criar decifrador: ${error.message}`))
 						return
 					}
@@ -598,10 +598,10 @@ export const downloadEncryptedContent = async(
 				try {
 					pushBytes(aes.update(data), b => this.push(b))
 					callback()
-				} catch(error) {
+				} catch(error: any) {
 					callback(new Error(`Erro na descriptografia (update): ${error.message}`))
 				}
-			} catch(error) {
+			} catch(error: any) {
 				callback(new Error(`Erro geral de descriptografia: ${error.message}`))
 			}
 		},
@@ -615,11 +615,11 @@ export const downloadEncryptedContent = async(
 				try {
 					pushBytes(aes.final(), b => this.push(b))
 					callback()
-				} catch(error) {
+				} catch(error: any) {
 					logger.debug(error)
 					callback(null)
 				}
-			} catch(error) {
+			} catch(error: any) {
 				logger.debug(error)
 				callback(null)
 			}
@@ -629,8 +629,8 @@ export const downloadEncryptedContent = async(
 }
 
 export function extensionForMediaMessage(message: WAMessageContent) {
-	const getExtension = (mimetype: string) => mimetype.split(';')[0].split('/')[1]
-	const type = Object.keys(message)[0] as MessageType
+	const getExtension = (mimetype: string) => mimetype.split(';')[0]?.split('/')[1]
+	const type = Object.keys(message)[0] as Exclude<MessageType, 'toJSON'>
 	let extension: string
 	if(
 		type === 'locationMessage' ||
@@ -640,7 +640,7 @@ export function extensionForMediaMessage(message: WAMessageContent) {
 		extension = '.jpeg'
 	} else {
 		const messageContent = message[type] as WAGenericMediaMessage
-		extension = getExtension(messageContent.mimetype!)
+		extension = getExtension(messageContent.mimetype!)!
 	}
 
 	return extension
@@ -650,7 +650,7 @@ export const getWAUploadToServer = (
 	{ customUploadHosts, fetchAgent, logger, options }: SocketConfig,
 	refreshMediaConn: (force: boolean) => Promise<MediaConnInfo>,
 ): WAMediaUploadFunction => {
-	return async(filePath, { mediaType, fileEncSha256B64, timeoutMs }) => {
+	return async (filePath, { mediaType, fileEncSha256B64, timeoutMs }) => {
 		let uploadInfo = await refreshMediaConn(false)
 
 		let urls: { mediaUrl: string, directPath: string } | undefined
@@ -663,7 +663,7 @@ export const getWAUploadToServer = (
 
 			const auth = encodeURIComponent(uploadInfo.auth)
 			const url = `https://${hostname}${MEDIA_PATH_MAP[mediaType]}/${fileEncSha256B64}?auth=${auth}&token=${fileEncSha256B64}`
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			 
 			let result: any
 			try {
 
@@ -697,7 +697,7 @@ export const getWAUploadToServer = (
 					uploadInfo = await refreshMediaConn(true)
 					throw new Error(`upload failed, reason: ${JSON.stringify(result)}`)
 				}
-			} catch(error) {
+			} catch(error: any) {
 				if(axios.isAxiosError(error)) {
 					result = error.response?.data
 				}
@@ -725,7 +725,7 @@ const getMediaRetryKey = (mediaKey: Buffer | Uint8Array) => {
 /**
  * Generate a binary node that will request the phone to re-upload the media & return the newly uploaded URL
  */
-export const encryptMediaRetryRequest = async(
+export const encryptMediaRetryRequest = async (
 	key: waproto.IMessageKey,
 	mediaKey: Buffer | Uint8Array,
 	meId: string
@@ -782,7 +782,7 @@ export const decodeMediaRetryNode = (node: BinaryNode) => {
 
 	const errorNode = getBinaryNodeChild(node, 'error')
 	if(errorNode) {
-		const errorCode = +errorNode.attrs.code
+		const errorCode = +errorNode.attrs.code!
 		event.error = new Boom(
 			`Failed to re-upload media (${errorCode})`,
 			{ data: errorNode.attrs, statusCode: getStatusCodeForMediaRetry(errorCode) }
@@ -801,7 +801,7 @@ export const decodeMediaRetryNode = (node: BinaryNode) => {
 	return event
 }
 
-export const decryptMediaRetryData = async(
+export const decryptMediaRetryData = async (
 	{ ciphertext, iv }: { ciphertext: Uint8Array, iv: Uint8Array },
 	mediaKey: Uint8Array,
 	msgId: string
@@ -811,7 +811,7 @@ export const decryptMediaRetryData = async(
 	return waproto.MediaRetryNotification.decode(plaintext)
 }
 
-export const getStatusCodeForMediaRetry = (code: number) => MEDIA_RETRY_STATUS_MAP[code]
+export const getStatusCodeForMediaRetry = (code: number) => MEDIA_RETRY_STATUS_MAP[code as waproto.MediaRetryNotification.ResultType]
 
 const MEDIA_RETRY_STATUS_MAP = {
 	[waproto.MediaRetryNotification.ResultType.SUCCESS]: 200,

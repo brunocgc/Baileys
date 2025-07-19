@@ -1,4 +1,4 @@
-import { Contact } from './Contact'
+import type { Contact } from './Contact'
 
 export type GroupParticipant = (Contact & { isAdmin?: boolean, isSuperAdmin?: boolean, admin?: 'admin' | 'superadmin' | null, jid?: string | undefined })
 

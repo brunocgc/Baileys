@@ -1,6 +1,6 @@
 import { Boom } from '@hapi/boom'
-import { SocketConfig } from '../Types'
-import { BinaryNode, S_WHATSAPP_NET } from '../WABinary'
+import { type SocketConfig } from '../Types'
+import { type BinaryNode, S_WHATSAPP_NET } from '../WABinary'
 import { USyncQuery } from '../WAUSync'
 import { makeSocket } from './socket'
 
@@ -12,7 +12,7 @@ export const makeUSyncSocket = (config: SocketConfig) => {
 		query,
 	} = sock
 
-	const executeUSyncQuery = async(usyncQuery: USyncQuery) => {
+	const executeUSyncQuery = async (usyncQuery: USyncQuery) => {
 		if(usyncQuery.protocols.length === 0) {
 			throw new Boom('USyncQuery must have at least one protocol')
 		}

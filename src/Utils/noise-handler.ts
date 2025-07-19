@@ -1,10 +1,10 @@
 import { Boom } from '@hapi/boom'
 import { waproto } from '../../WAProto'
 import { NOISE_MODE, WA_CERT_DETAILS } from '../Defaults'
-import { KeyPair } from '../Types'
-import { BinaryNode, decodeBinaryNode } from '../WABinary'
+import type { KeyPair } from '../Types'
+import { type BinaryNode, decodeBinaryNode } from '../WABinary'
 import { aesDecryptGCM, aesEncryptGCM, Curve, hkdf, sha256 } from './crypto'
-import { ILogger } from './logger'
+import type { ILogger } from './logger'
 
 const generateIV = (counter: number) => {
 	const iv = new ArrayBuffer(12)
@@ -61,24 +61,24 @@ export const makeNoiseHandler = ({
 		return result
 	}
 
-	const localHKDF = async(data: Uint8Array) => {
+	const localHKDF = async (data: Uint8Array) => {
 		const key = await hkdf(Buffer.from(data), 64, { salt, info: '' })
 		return [key.slice(0, 32), key.slice(32)]
 	}
 
-	const mixIntoKey = async(data: Uint8Array) => {
+	const mixIntoKey = async (data: Uint8Array) => {
 		const [write, read] = await localHKDF(data)
-		salt = write
-		encKey = read
-		decKey = read
+		salt = write!
+		encKey = read!
+		decKey = read!
 		readCounter = 0
 		writeCounter = 0
 	}
 
-	const finishInit = async() => {
+	const finishInit = async () => {
 		const [write, read] = await localHKDF(new Uint8Array(0))
-		encKey = write
-		decKey = read
+		encKey = write!
+		decKey = read!
 		hash = Buffer.from([])
 		readCounter = 0
 		writeCounter = 0
@@ -106,7 +106,7 @@ export const makeNoiseHandler = ({
 		authenticate,
 		mixIntoKey,
 		finishInit,
-		processHandshake: async({ serverHello }: waproto.HandshakeMessage, noiseKey: KeyPair) => {
+		processHandshake: async ({ serverHello }: waproto.HandshakeMessage, noiseKey: KeyPair) => {
 			authenticate(serverHello!.ephemeral!)
 			await mixIntoKey(Curve.sharedKey(privateKey, serverHello!.ephemeral!))
 
@@ -161,7 +161,7 @@ export const makeNoiseHandler = ({
 
 			return frame
 		},
-		decodeFrame: async(newData: Buffer | Uint8Array, onFrame: (buff: Uint8Array | BinaryNode) => void) => {
+		decodeFrame: async (newData: Buffer | Uint8Array, onFrame: (buff: Uint8Array | BinaryNode) => void) => {
 			// the binary protocol uses its own framing mechanism
 			// on top of the WS frames
 			// so we get this data and separate out the frames
@@ -169,7 +169,7 @@ export const makeNoiseHandler = ({
 				if(inBytes.length >= 3) {
 					try {
 						return (inBytes.readUInt8() << 16) | inBytes.readUInt16BE(1)
-					} catch(error) {
+					} catch(error: any) {
 						logger.warn({ error }, 'Failed to read bytes size from buffer')
 						return undefined
 					}
@@ -197,7 +197,7 @@ export const makeNoiseHandler = ({
 
 					try {
 						frame = await decodeBinaryNode(result)
-					} catch(error) {
+					} catch(error: any) {
 						logger.error({ error }, 'Failed to decode binary node')
 						// Skip this frame and continue with the next one
 						size = getBytesSize()

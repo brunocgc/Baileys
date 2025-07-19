@@ -1,8 +1,8 @@
-import { AxiosRequestConfig } from 'axios'
+import type { AxiosRequestConfig } from 'axios'
 import { promisify } from 'util'
 import { inflate } from 'zlib'
 import { waproto } from '../../WAProto'
-import { Chat, Contact, WAMessageStubType } from '../Types'
+import { type Chat, type Contact, WAMessageStubType } from '../Types'
 import { isJidUser } from '../WABinary'
 import { toNumber } from './generics'
 import { normalizeMessageContent } from './messages'
@@ -10,7 +10,7 @@ import { downloadContentFromMessage } from './messages-media'
 
 const inflatePromise = promisify(inflate)
 
-export const downloadHistory = async(
+export const downloadHistory = async (
 	msg: waproto.Message.IHistorySyncNotification,
 	options: AxiosRequestConfig<{}>
 ) => {
@@ -104,7 +104,7 @@ export const processHistoryMessage = (item: waproto.IHistorySync) => {
 	}
 }
 
-export const downloadAndProcessHistorySyncNotification = async(
+export const downloadAndProcessHistorySyncNotification = async (
 	msg: waproto.Message.IHistorySyncNotification,
 	options: AxiosRequestConfig<{}>
 ) => {

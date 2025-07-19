@@ -1,3 +1,4 @@
+/* @ts-ignore */
 import { decrypt, encrypt } from 'libsignal/src/crypto'
 import logger from '../../Utils/logger'
 import queueJob from './queue-job'
@@ -26,7 +27,7 @@ export class GroupCipher {
 	}
 
 	public async encrypt(paddedPlaintext: Uint8Array | string): Promise<Uint8Array> {
-		return await this.queueJob(async() => {
+		return await this.queueJob(async () => {
 			const record: SenderKeyRecord = await this.senderKeyStore.loadSenderKey(this.senderKeyName)
 			if(!record) {
 				throw new Error('No SenderKeyRecord found for encryption')
@@ -55,7 +56,7 @@ export class GroupCipher {
 	}
 
 	public async decrypt(senderKeyMessageBytes: Uint8Array): Promise<Uint8Array> {
-		return await this.queueJob(async() => {
+		return await this.queueJob(async () => {
 			const record: SenderKeyRecord = await this.senderKeyStore.loadSenderKey(this.senderKeyName)
 			if(!record) {
 				throw new Error('No SenderKeyRecord found for decryption')
@@ -129,7 +130,6 @@ export class GroupCipher {
 			const plaintextBuffer = typeof plaintext === 'string' ? Buffer.from(plaintext) : plaintext
 			return encrypt(keyBuffer, plaintextBuffer, ivBuffer)
 		} catch(e) {
-			logger.trace(e)
 			throw new Error('InvalidMessageException')
 		}
 	}

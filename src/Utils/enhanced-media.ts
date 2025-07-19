@@ -1,5 +1,5 @@
-import axios, { AxiosRequestConfig } from 'axios'
-import { MediaDecryptionKeyInfo } from '../Types'
+import axios, { type AxiosRequestConfig } from 'axios'
+import type { MediaDecryptionKeyInfo } from '../Types'
 import { createFallbackDecryptStream } from '../Utils/fallback-decryption'
 import { downloadEncryptedContent as originalDownloadEncryptedContent } from '../Utils/messages-media'
 
@@ -13,7 +13,7 @@ export type MediaDownloadOptions = {
  * Versão modificada da função downloadEncryptedContent que tenta usar
  * o método de descriptografia alternativo caso o método original falhe
  */
-export const enhancedDownloadEncryptedContent = async(
+export const enhancedDownloadEncryptedContent = async (
 	downloadUrl: string,
 	keys: MediaDecryptionKeyInfo,
 	options: MediaDownloadOptions = {}
@@ -21,7 +21,7 @@ export const enhancedDownloadEncryptedContent = async(
 	try {
 		// Primeiro tenta usar o método original
 		return await originalDownloadEncryptedContent(downloadUrl, keys, options)
-	} catch(error) {
+	} catch(error: any) {
 		// Se der erro, registra e tenta o método alternativo
 		console.error('Erro na descriptografia original, tentando método alternativo', error)
 
@@ -40,7 +40,7 @@ export const enhancedDownloadEncryptedContent = async(
 		const buffer = Buffer.from(response.data)
 		const nodeReadable = new Readable()
 
-		nodeReadable._read = function() { } // eslint-disable-line no-empty-function
+		nodeReadable._read = function () { }  
 
 		nodeReadable.push(buffer)
 		nodeReadable.push(null)

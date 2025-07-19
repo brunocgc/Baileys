@@ -1,5 +1,4 @@
 import { Boom } from '@hapi/boom'
-import NodeCache from '@cacheable/node-cache'
 import readline from 'readline'
 import { randomBytes } from 'crypto'
 import makeWASocket, { AnyMessageContent, BinaryInfo, delay, DisconnectReason, encodeWAM, fetchLatestBaileysVersion, getAggregateVotesInPollMessage, isJidNewsletter, makeCacheableSignalKeyStore, waproto, useMultiFileAuthState, WAMessageContent, WAMessageKey } from '../src'
@@ -16,7 +15,6 @@ const logger = P({ timestamp: () => `,"time":"${new Date().toJSON()}"` }, P.mult
 logger.level = 'debug'
 
 const usePairingCode = process.argv.includes('--use-pairing-code')
-const msgRetryCounterCache = new NodeCache()
 const onDemandMap = new Map<string, string>()
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
 const question = (text: string) => new Promise<string>((resolve) => rl.question(text, resolve))
@@ -31,7 +29,6 @@ const startSock = async () => {
 			creds: state.creds,
 			keys: makeCacheableSignalKeyStore(state.keys, logger),
 		},
-		msgRetryCounterCache,
 		generateHighQualityLinkPreview: true,
 		getMessage,
 	})

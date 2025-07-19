@@ -1,12 +1,12 @@
 import { Boom } from '@hapi/boom'
-import { AxiosRequestConfig } from 'axios'
+import type { AxiosRequestConfig } from 'axios'
 import { waproto } from '../../WAProto'
-import { BaileysEventEmitter, Chat, ChatModification, ChatMutation, ChatUpdate, Contact, InitialAppStateSyncOptions, LastMessageList, LTHashState, WAPatchCreate, WAPatchName } from '../Types'
-import { ChatLabelAssociation, LabelAssociationType, MessageLabelAssociation } from '../Types/LabelAssociation'
-import { BinaryNode, getBinaryNodeChild, getBinaryNodeChildren, isJidGroup, isJidUser, jidNormalizedUser } from '../WABinary'
+import type { BaileysEventEmitter, Chat, ChatModification, ChatMutation, ChatUpdate, Contact, InitialAppStateSyncOptions, LastMessageList, LTHashState, WAPatchCreate, WAPatchName } from '../Types'
+import { type ChatLabelAssociation, LabelAssociationType, type MessageLabelAssociation } from '../Types/LabelAssociation'
+import { type BinaryNode, getBinaryNodeChild, getBinaryNodeChildren, isJidGroup, isJidUser, jidNormalizedUser } from '../WABinary'
 import { aesDecrypt, aesEncrypt, hkdf, hmacSign } from './crypto'
 import { toNumber } from './generics'
-import { ILogger } from './logger'
+import type { ILogger } from './logger'
 import { LT_HASH_ANTI_TAMPERING } from './lt-hash'
 import { downloadContentFromMessage, } from './messages-media'
 
@@ -14,7 +14,7 @@ type FetchAppStateSyncKey = (keyId: string) => Promise<waproto.Message.IAppState
 
 export type ChatMutationMap = { [index: string]: ChatMutation }
 
-const mutationKeys = async(keydata: Uint8Array) => {
+const mutationKeys = async (keydata: Uint8Array) => {
 	const expanded = await hkdf(keydata, 160, { info: 'WhatsApp Mutation Keys' })
 	return {
 		indexKey: expanded.slice(0, 32),
@@ -86,7 +86,7 @@ const makeLtHashGenerator = ({ indexValueMap, hash }: Pick<LTHashState, 'hash' |
 				subBuffs.push(new Uint8Array(prevOp.valueMac).buffer)
 			}
 		},
-		finish: async() => {
+		finish: async () => {
 			const hashArrayBuffer = new Uint8Array(hash).buffer
 			const result = await LT_HASH_ANTI_TAMPERING.subtractThenAdd(hashArrayBuffer, addBuffs, subBuffs)
 			const buffer = Buffer.from(result)
@@ -120,7 +120,7 @@ const generatePatchMac = (snapshotMac: Uint8Array, valueMacs: Uint8Array[], vers
 
 export const newLTHashState = (): LTHashState => ({ version: 0, hash: Buffer.alloc(128), indexValueMap: {} })
 
-export const encodeSyncdPatch = async(
+export const encodeSyncdPatch = async (
 	{ type, index, syncAction, apiVersion, operation }: WAPatchCreate,
 	myAppStateKeyId: string,
 	state: LTHashState,
@@ -185,7 +185,7 @@ export const encodeSyncdPatch = async(
 	return { patch, state }
 }
 
-export const decodeSyncdMutations = async(
+export const decodeSyncdMutations = async (
 	msgMutations: (waproto.ISyncdMutation | waproto.ISyncdRecord)[],
 	initialState: LTHashState,
 	getAppStateSyncKey: FetchAppStateSyncKey,
@@ -246,7 +246,7 @@ export const decodeSyncdMutations = async(
 	}
 }
 
-export const decodeSyncdPatch = async(
+export const decodeSyncdPatch = async (
 	msg: waproto.ISyncdPatch,
 	name: WAPatchName,
 	initialState: LTHashState,
@@ -274,7 +274,7 @@ export const decodeSyncdPatch = async(
 	return result
 }
 
-export const extractSyncdPatches = async(
+export const extractSyncdPatches = async (
 	result: BinaryNode,
 	options: AxiosRequestConfig<{}>
 ) => {
@@ -316,7 +316,7 @@ export const extractSyncdPatches = async(
 
 						const syncd = waproto.SyncdPatch.decode(content as Uint8Array)
 						if(!syncd.version) {
-							syncd.version = { version: +collectionNode.attrs.version + 1 }
+							syncd.version = { version: +collectionNode.attrs.version! + 1 }
 						}
 
 						syncds.push(syncd)
@@ -332,7 +332,7 @@ export const extractSyncdPatches = async(
 }
 
 
-export const downloadExternalBlob = async(
+export const downloadExternalBlob = async (
 	blob: waproto.IExternalBlobReference,
 	options: AxiosRequestConfig<{}>
 ) => {
@@ -345,7 +345,7 @@ export const downloadExternalBlob = async(
 	return Buffer.concat(bufferArray)
 }
 
-export const downloadExternalPatch = async(
+export const downloadExternalPatch = async (
 	blob: waproto.IExternalBlobReference,
 	options: AxiosRequestConfig<{}>
 ) => {
@@ -354,7 +354,7 @@ export const downloadExternalPatch = async(
 	return syncData
 }
 
-export const decodeSyncdSnapshot = async(
+export const decodeSyncdSnapshot = async (
 	name: WAPatchName,
 	snapshot: waproto.ISyncdSnapshot,
 	getAppStateSyncKey: FetchAppStateSyncKey,
@@ -403,7 +403,7 @@ export const decodeSyncdSnapshot = async(
 	}
 }
 
-export const decodePatches = async(
+export const decodePatches = async (
 	name: WAPatchName,
 	syncds: waproto.ISyncdPatch[],
 	initial: LTHashState,
@@ -606,7 +606,7 @@ export const chatModificationToAppPatch = (
 					starred: !!mod.star.star
 				}
 			},
-			index: ['star', jid, key.id, key.fromMe ? '1' : '0', '0'],
+			index: ['star', jid, key!.id, key!.fromMe ? '1' : '0', '0'],
 			type: 'regular_low',
 			apiVersion: 2,
 			operation: OP.SET
@@ -762,7 +762,7 @@ export const processSyncAction = (
 					muteEndTime: action.muteAction?.muted
 						? toNumber(action.muteAction.muteEndTimestamp)
 						: null,
-					conditional: getChatUpdateConditional(id, undefined)
+					conditional: getChatUpdateConditional(id!, undefined)
 				}
 			]
 		)
@@ -793,7 +793,7 @@ export const processSyncAction = (
 		ev.emit('chats.update', [{
 			id,
 			archived: isArchived,
-			conditional: getChatUpdateConditional(id, msgRange)
+			conditional: getChatUpdateConditional(id!, msgRange)
 		}])
 	} else if(action?.markChatAsReadAction) {
 		const markReadAction = action.markChatAsReadAction
@@ -805,7 +805,7 @@ export const processSyncAction = (
 		ev.emit('chats.update', [{
 			id,
 			unreadCount: isNullUpdate ? null : !!markReadAction?.read ? 0 : -1,
-			conditional: getChatUpdateConditional(id, markReadAction?.messageRange)
+			conditional: getChatUpdateConditional(id!, markReadAction?.messageRange)
 		}])
 	} else if(action?.deleteMessageForMeAction || type === 'deleteMessageForMe') {
 		ev.emit('messages.delete', {
@@ -820,7 +820,7 @@ export const processSyncAction = (
 	} else if(action?.contactAction) {
 		ev.emit('contacts.upsert', [
 			{
-				id,
+				id: id!,
 				name: action.contactAction.fullName!,
 				lid: action.contactAction.lidJid || undefined,
 				jid: isJidUser(id) ? id : undefined
@@ -835,7 +835,7 @@ export const processSyncAction = (
 		ev.emit('chats.update', [{
 			id,
 			pinned: action.pinAction?.pinned ? toNumber(action.timestamp) : null,
-			conditional: getChatUpdateConditional(id, undefined)
+			conditional: getChatUpdateConditional(id!, undefined)
 		}])
 	} else if(action?.unarchiveChatsSetting) {
 		const unarchiveChats = !!action.unarchiveChatsSetting.unarchiveChats
@@ -859,13 +859,13 @@ export const processSyncAction = (
 		])
 	} else if(action?.deleteChatAction || type === 'deleteChat') {
 		if(!isInitialSync) {
-			ev.emit('chats.delete', [id])
+			ev.emit('chats.delete', [id!])
 		}
 	} else if(action?.labelEditAction) {
 		const { name, color, deleted, predefinedId } = action.labelEditAction
 
 		ev.emit('labels.edit', {
-			id,
+			id: id!,
 			name: name!,
 			color: color!,
 			deleted: deleted!,

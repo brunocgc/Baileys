@@ -1,12 +1,12 @@
-/* eslint-disable linebreak-style */
-import { AxiosRequestConfig } from 'axios'
+ 
+import type { AxiosRequestConfig } from 'axios'
 import type { Readable } from 'stream'
 import type { URL } from 'url'
 import { waproto } from '../../WAProto'
 import { MEDIA_HKDF_KEY_MAPPING } from '../Defaults'
-import { BinaryNode } from '../WABinary'
+import type { BinaryNode } from '../WABinary'
 import type { GroupMetadata } from './GroupMetadata'
-import { CacheStore } from './Socket'
+import type { CacheStore } from './Socket'
 
 // export the WAMessage Prototypes
 export { waproto as WAProto }
@@ -26,7 +26,7 @@ export type WALocationMessage = waproto.Message.ILocationMessage
 export type WAGenericMediaMessage = waproto.Message.IVideoMessage | waproto.Message.IImageMessage | waproto.Message.IAudioMessage | waproto.Message.IDocumentMessage | waproto.Message.IStickerMessage
 export const WAMessageStubType = waproto.WebMessageInfo.StubType
 export const WAMessageStatus = waproto.WebMessageInfo.Status
-import { ILogger } from '../Utils/logger'
+import type { ILogger } from '../Utils/logger'
 export type WAMediaPayloadURL = { url: URL | string }
 export type WAMediaPayloadStream = { stream: Readable }
 export type WAMediaUpload = Buffer | WAMediaPayloadStream | WAMediaPayloadURL

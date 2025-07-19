@@ -1,9 +1,9 @@
 import { Boom } from '@hapi/boom'
 import { waproto } from '../../WAProto'
-import { SignalRepository, WAMessageKey } from '../Types'
-import { areJidsSameUser, BinaryNode, isJidBroadcast, isJidGroup, isJidNewsletter, isJidStatusBroadcast, isJidUser, isLidUser } from '../WABinary'
+import type { SignalRepository, WAMessageKey } from '../Types'
+import { areJidsSameUser, type BinaryNode, isJidBroadcast, isJidGroup, isJidMetaIa, isJidNewsletter, isJidStatusBroadcast, isJidUser, isLidUser } from '../WABinary'
 import { unpadRandomMax16 } from './generics'
-import { ILogger } from './logger'
+import type { ILogger } from './logger'
 
 export const NO_MESSAGE_FOUND_ERROR_TEXT = 'Message absent from node'
 export const MISSING_KEYS_ERROR_TEXT = 'Key used already or never filled'
@@ -47,32 +47,19 @@ export function decodeMessageNode(
 	const isMe = (jid: string) => areJidsSameUser(jid, meId)
 	const isMeLid = (jid: string) => areJidsSameUser(jid, meLid)
 
-	if(isJidUser(from)) {
-		if(recipient) {
-			if(!isMe(from)) {
+	if(isJidUser(from) || isLidUser(from)) {
+		if(recipient && !isJidMetaIa(recipient)) {
+			if(!isMe(from!) && !isMeLid(from!)) {
 				throw new Boom('receipient present, but msg not from me', { data: stanza })
 			}
 
 			chatId = recipient
 		} else {
-			chatId = from
+			chatId = from!
 		}
 
 		msgType = 'chat'
-		author = from
-	} else if(isLidUser(from)) {
-		if(recipient) {
-			if(!isMeLid(from)) {
-				throw new Boom('receipient present, but msg not from me', { data: stanza })
-			}
-
-			chatId = recipient
-		} else {
-			chatId = from
-		}
-
-		msgType = 'chat'
-		author = from
+		author = from!
 	} else if(isJidGroup(from)) {
 		if(!participant) {
 			throw new Boom('No participant in group message')
@@ -80,30 +67,30 @@ export function decodeMessageNode(
 
 		msgType = 'group'
 		author = participant
-		chatId = from
+		chatId = from!
 	} else if(isJidBroadcast(from)) {
 		if(!participant) {
 			throw new Boom('No participant in group message')
 		}
 
 		const isParticipantMe = isMe(participant)
-		if(isJidStatusBroadcast(from)) {
+		if(isJidStatusBroadcast(from!)) {
 			msgType = isParticipantMe ? 'direct_peer_status' : 'other_status'
 		} else {
 			msgType = isParticipantMe ? 'peer_broadcast' : 'other_broadcast'
 		}
 
-		chatId = from
+		chatId = from!
 		author = participant
 	} else if(isJidNewsletter(from)) {
 		msgType = 'newsletter'
-		chatId = from
-		author = from
+		chatId = from!
+		author = from!
 	} else {
 		throw new Boom('Unknown message type', { data: stanza })
 	}
 
-	const fromMe = (isLidUser(from) ? isMeLid : isMe)(stanza.attrs.participant || stanza.attrs.from)
+	const fromMe = (isLidUser(from) ? isMeLid : isMe)((stanza.attrs.participant || stanza.attrs.from)!)
 	const pushname = stanza?.attrs?.notify
 
 	const key: WAMessageKey = {
@@ -119,7 +106,7 @@ export function decodeMessageNode(
 
 	const fullMessage: waproto.IWebMessageInfo = {
 		key,
-		messageTimestamp: +stanza.attrs.t,
+		messageTimestamp: +stanza.attrs.t!,
 		pushName: pushname,
 		broadcast: isJidBroadcast(from)
 	}
@@ -204,9 +191,9 @@ export const decryptMessageNode = (
 									authorJid: author,
 									item: msg.senderKeyDistributionMessage
 								})
-							} catch(err) {
-								logger.error({ key: fullMessage.key, err }, 'failed to decrypt message')
-						        }
+							} catch(error: any) {
+								logger.error({ key: fullMessage.key, error }, 'failed to decrypt message')
+							}
 						}
 
 						if(fullMessage.message) {
@@ -214,13 +201,13 @@ export const decryptMessageNode = (
 						} else {
 							fullMessage.message = msg
 						}
-					} catch(err) {
+					} catch(error: any) {
 						logger.error(
-							{ key: fullMessage.key, err },
+							{ key: fullMessage.key, error },
 							'failed to decrypt message'
 						)
 						fullMessage.messageStubType = waproto.WebMessageInfo.StubType.CIPHERTEXT
-						fullMessage.messageStubParameters = [err.message]
+						fullMessage.messageStubParameters = [error.message]
 					}
 				}
 			}

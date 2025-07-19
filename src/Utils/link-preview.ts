@@ -1,13 +1,13 @@
-import { AxiosRequestConfig } from 'axios'
-import { WAMediaUploadFunction, WAUrlInfo } from '../Types'
-import { ILogger } from './logger'
+import type { AxiosRequestConfig } from 'axios'
+import type { WAMediaUploadFunction, WAUrlInfo } from '../Types'
+import type { ILogger } from './logger'
 import { prepareWAMessageMedia } from './messages'
 import { extractImageThumb, getHttpStream } from './messages-media'
 
 const THUMBNAIL_WIDTH_PX = 192
 
 /** Fetches an image and generates a thumbnail for it */
-const getCompressedJpegThumbnail = async(
+const getCompressedJpegThumbnail = async (
 	url: string,
 	{ thumbnailWidth, fetchOpts }: URLGenerationOptions
 ) => {
@@ -34,7 +34,7 @@ export type URLGenerationOptions = {
  * @param text first matched URL in text
  * @returns the URL info required to generate link preview
  */
-export const getUrlInfo = async(
+export const getUrlInfo = async (
 	text: string,
 	opts: URLGenerationOptions = {
 		thumbnailWidth: THUMBNAIL_WIDTH_PX,
@@ -88,7 +88,7 @@ export const getUrlInfo = async(
 
 			if(opts.uploadImage) {
 				const { imageMessage } = await prepareWAMessageMedia(
-					{ image: { url: image } },
+					{ image: { url: image! } },
 					{
 						upload: opts.uploadImage,
 						mediaTypeOverride: 'thumbnail-link',
@@ -104,7 +104,7 @@ export const getUrlInfo = async(
 					urlInfo.jpegThumbnail = image
 						? (await getCompressedJpegThumbnail(image, opts)).buffer
 						: undefined
-				} catch(error) {
+				} catch(error: any) {
 					opts.logger?.debug(
 						{ err: error.stack, url: previewLink },
 						'error in generating thumbnail'
@@ -114,7 +114,7 @@ export const getUrlInfo = async(
 
 			return urlInfo
 		}
-	} catch(error) {
+	} catch(error: any) {
 		if(!error.message.includes('receive a valid')) {
 			throw error
 		}

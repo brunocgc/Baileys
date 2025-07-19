@@ -1,5 +1,5 @@
-import { USyncQueryProtocol } from '../Types/USync'
-import { BinaryNode, getBinaryNodeChild } from '../WABinary'
+import { type USyncQueryProtocol } from '../Types/USync'
+import { type BinaryNode, getBinaryNodeChild } from '../WABinary'
 import { USyncContactProtocol, USyncDeviceProtocol, USyncDisappearingModeProtocol, USyncLIDProtocol, USyncStatusProtocol } from './Protocols'
 import { USyncUser } from './USyncUser'
 
@@ -62,7 +62,7 @@ export class USyncQuery {
 		const listNode = getBinaryNodeChild(usyncNode, 'list')
 		if(Array.isArray(listNode?.content) && typeof listNode !== 'undefined') {
 			queryResult.list = listNode.content.map((node) => {
-				const id = node?.attrs.jid
+				const id = node?.attrs.jid!
 				const data = Array.isArray(node?.content) ? Object.fromEntries(node.content.map((content) => {
 					const protocol = content.tag
 					const parser = protocolMap[protocol]

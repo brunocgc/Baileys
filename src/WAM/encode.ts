@@ -1,5 +1,6 @@
+ 
 import { BinaryInfo } from './BinaryInfo'
-import { FLAG_BYTE, FLAG_EVENT, FLAG_EXTENDED, FLAG_FIELD, FLAG_GLOBAL, Value, WEB_EVENTS, WEB_GLOBALS } from './constants'
+import { FLAG_BYTE, FLAG_EVENT, FLAG_EXTENDED, FLAG_FIELD, FLAG_GLOBAL, type Value, WEB_EVENTS, WEB_GLOBALS } from './constants'
 
 const getHeaderBitLength = (key: number) => (key < 256 ? 2 : 3)
 
@@ -47,10 +48,7 @@ function encodeGlobalAttributes(binaryInfo: BinaryInfo, globals: {[key: string]:
 }
 
 function encodeEvents(binaryInfo: BinaryInfo) {
-	for(const [
-		name,
-		{ props, globals },
-	] of binaryInfo.events.map((a) => Object.entries(a)[0])) {
+	for(const [name, { props, globals }] of binaryInfo.events.map(a => Object.entries(a)[0]!)) {
 		encodeGlobalAttributes(binaryInfo, globals)
 		const event = WEB_EVENTS.find((a) => a.name === name)!
 
@@ -66,8 +64,8 @@ function encodeEvents(binaryInfo: BinaryInfo) {
 		binaryInfo.buffer.push(serializeData(event.id, -event.weight, eventFlag))
 
 		for(let i = 0; i < props_.length; i++) {
-			const [key, _value] = props_[i]
-			const id = (event.props)[key][0]
+			const [key, _value] = props_[i]!
+			const id = (event.props)[key]?.[0]
 			extended = i < (props_.length - 1)
 			let value = _value
 			if(typeof value === 'boolean') {
@@ -75,7 +73,7 @@ function encodeEvents(binaryInfo: BinaryInfo) {
 			}
 
 			const fieldFlag = extended ? FLAG_EVENT : FLAG_FIELD | FLAG_EXTENDED
-			binaryInfo.buffer.push(serializeData(id, value, fieldFlag))
+			binaryInfo.buffer.push(serializeData(id!, value, fieldFlag))
 		}
 	}
 }

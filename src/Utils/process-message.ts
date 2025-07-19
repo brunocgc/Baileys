@@ -1,12 +1,12 @@
-import { AxiosRequestConfig } from 'axios'
+import type { AxiosRequestConfig } from 'axios'
 import { waproto } from '../../WAProto'
-import { AuthenticationCreds, BaileysEventEmitter, CacheStore, Chat, GroupMetadata, ParticipantAction, RequestJoinAction, RequestJoinMethod, SignalKeyStoreWithTransaction, SocketConfig, WAMessageStubType } from '../Types'
+import { type AuthenticationCreds, type BaileysEventEmitter, type CacheStore, type Chat, type GroupMetadata, type ParticipantAction, type RequestJoinAction, type RequestJoinMethod, type SignalKeyStoreWithTransaction, type SocketConfig, WAMessageStubType } from '../Types'
 import { getContentType, normalizeMessageContent } from '../Utils/messages'
 import { areJidsSameUser, isJidBroadcast, isJidStatusBroadcast, jidNormalizedUser } from '../WABinary'
 import { aesDecryptGCM, hmacSign } from './crypto'
 import { getKeyAuthor, toNumber } from './generics'
 import { downloadAndProcessHistorySyncNotification } from './history'
-import { ILogger } from './logger'
+import type { ILogger } from './logger'
 
 type ProcessMessageContext = {
 	shouldProcessHistoryMsg: boolean
@@ -149,7 +149,7 @@ export function decryptPollVote(
 	}
 }
 
-const processMessage = async(
+const processMessage = async (
 	message: waproto.IWebMessageInfo,
 	{
 		shouldProcessHistoryMsg,
@@ -235,7 +235,7 @@ const processMessage = async(
 			if(keys?.length) {
 				let newAppStateSyncKeyId = ''
 				await keyStore.transaction(
-					async() => {
+					async () => {
 						const newKeys: string[] = []
 						for(const { keyData, keyId } of keys) {
 							const strKeyId = Buffer.from(keyId!.keyId!).toString('base64')
@@ -298,6 +298,8 @@ const processMessage = async(
 					}
 				}
 			}
+
+			break
 
 		case waproto.Message.ProtocolMessage.Type.MESSAGE_EDIT:
 			ev.emit(
@@ -452,9 +454,9 @@ const processMessage = async(
 						}
 					}
 				])
-			} catch(err) {
+			} catch(error: any) {
 				logger?.warn(
-					{ err, creationMsgKey },
+					{ error, creationMsgKey },
 					'failed to decrypt poll vote'
 				)
 			}

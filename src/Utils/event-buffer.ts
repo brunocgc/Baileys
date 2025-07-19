@@ -1,8 +1,8 @@
 import EventEmitter from 'events'
 import { waproto } from '../../WAProto'
-import { BaileysEvent, BaileysEventEmitter, BaileysEventMap, BufferedEventData, Chat, ChatUpdate, Contact, WAMessage, WAMessageStatus } from '../Types'
+import { type BaileysEvent, type BaileysEventEmitter, type BaileysEventMap, type BufferedEventData, type Chat, type ChatUpdate, type Contact, type WAMessage, WAMessageStatus } from '../Types'
 import { trimUndefined } from './generics'
-import { ILogger } from './logger'
+import type { ILogger } from './logger'
 import { updateMessageWithReaction, updateMessageWithReceipt } from './messages'
 import { isRealMessage, shouldIncrementChatUnread } from './process-message'
 
@@ -42,7 +42,7 @@ type BaileysBufferableEventEmitter = BaileysEventEmitter & {
 	 * */
 	buffer(): void
 	/** buffers all events till the promise completes */
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	 
 	createBufferedFunction<A extends any[], T>(work: (...args: A) => Promise<T>): ((...args: A) => Promise<T>)
 	/**
 	 * flushes all buffered events
@@ -69,7 +69,7 @@ export const makeEventBuffer = (logger: ILogger): BaileysBufferableEventEmitter 
 	// take the generic event and fire it as a baileys event
 	ev.on('event', (map: BaileysEventData) => {
 		for(const event in map) {
-			ev.emit(event, map[event])
+			ev.emit(event, map[event as keyof BaileysEventMap])
 		}
 	})
 
@@ -145,7 +145,7 @@ export const makeEventBuffer = (logger: ILogger): BaileysBufferableEventEmitter 
 		buffer,
 		flush,
 		createBufferedFunction(work) {
-			return async(...args) => {
+			return async (...args) => {
 				buffer()
 				try {
 					const result = await work(...args)
@@ -188,7 +188,7 @@ function append<E extends BufferableEvent>(
 	data: BufferedEventData,
 	historyCache: Set<string>,
 	event: E,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	 
 	eventData: any,
 	logger: ILogger
 ) {
@@ -242,7 +242,7 @@ function append<E extends BufferableEvent>(
 		for(const chat of eventData as Chat[]) {
 			let upsert = data.chatUpserts[chat.id]
 			if(!upsert) {
-				upsert = data.historySets[chat.id]
+				upsert = data.historySets.chats[chat.id]
 				if(upsert) {
 					logger.debug({ chatId: chat.id }, 'absorbed chat upsert in chat set')
 				}
@@ -333,7 +333,7 @@ function append<E extends BufferableEvent>(
 			}
 
 			if(data.contactUpdates[contact.id]) {
-				upsert = Object.assign(data.contactUpdates[contact.id], trimUndefined(contact)) as Contact
+				upsert = Object.assign(data.contactUpdates[contact.id]!, trimUndefined(contact)) as Contact
 				delete data.contactUpdates[contact.id]
 			}
 		}
@@ -550,7 +550,7 @@ function consolidateEvents(data: BufferedEventData) {
 
 	const messageUpsertList = Object.values(data.messageUpserts)
 	if(messageUpsertList.length) {
-		const type = messageUpsertList[0].type
+		const type = messageUpsertList[0]!.type
 		map['messages.upsert'] = {
 			messages: messageUpsertList.map(m => m.message),
 			type

@@ -1,4 +1,4 @@
-/* eslint-disable linebreak-style */
+ 
 import { Boom } from '@hapi/boom'
 import axios from 'axios'
 import { randomBytes } from 'crypto'
@@ -7,27 +7,26 @@ import { type Transform } from 'stream'
 import { waproto } from '../../WAProto'
 import { MEDIA_KEYS, URL_REGEX, WA_DEFAULT_EPHEMERAL } from '../Defaults'
 import {
-	AnyMediaMessageContent,
-	AnyMessageContent,
-	DownloadableMessage,
-	MediaGenerationOptions,
-	MediaType,
-	MessageContentGenerationOptions,
-	MessageGenerationOptions,
-	MessageGenerationOptionsFromContent,
-	MessageType,
-	MessageUserReceipt,
-	WAMediaUpload,
-	WAMessage,
-	WAMessageContent,
+	type AnyMediaMessageContent,
+	type AnyMessageContent,
+	type DownloadableMessage,
+	type MediaGenerationOptions,
+	type MediaType,
+	type MessageContentGenerationOptions,
+	type MessageGenerationOptions,
+	type MessageGenerationOptionsFromContent,
+	type MessageUserReceipt,
+	type WAMediaUpload,
+	type WAMessage,
+	type WAMessageContent,
 	WAMessageStatus,
-	WATextMessage,
+	type WATextMessage,
 } from '../Types'
 import { isJidGroup, isJidStatusBroadcast, jidNormalizedUser } from '../WABinary'
 import { sha256 } from './crypto'
 import { generateMessageIDV2, getKeyAuthor, unixTimestampSeconds } from './generics'
-import { ILogger } from './logger'
-import { downloadContentFromMessage, encryptedStream, generateThumbnail, getAudioDuration, getAudioWaveform, MediaDownloadOptions } from './messages-media'
+import type { ILogger } from './logger'
+import { downloadContentFromMessage, encryptedStream, generateThumbnail, getAudioDuration, getAudioWaveform, type MediaDownloadOptions } from './messages-media'
 
 type MediaUploadData = {
 	media: WAMediaUpload
@@ -71,19 +70,19 @@ const ButtonType = waproto.Message.ButtonsMessage.HeaderType
  */
 export const extractUrlFromText = (text: string) => text.match(URL_REGEX)?.[0]
 
-export const generateLinkPreviewIfRequired = async(text: string, getUrlInfo: MessageGenerationOptions['getUrlInfo'], logger: MessageGenerationOptions['logger']) => {
+export const generateLinkPreviewIfRequired = async (text: string, getUrlInfo: MessageGenerationOptions['getUrlInfo'], logger: MessageGenerationOptions['logger']) => {
 	const url = extractUrlFromText(text)
 	if(!!getUrlInfo && url) {
 		try {
 			const urlInfo = await getUrlInfo(url)
 			return urlInfo
-		} catch(error) { // ignore if fails
+		} catch(error: any) { // ignore if fails
 			logger?.warn({ trace: error.stack }, 'url generation failed')
 		}
 	}
 }
 
-const assertColor = async(color) => {
+const assertColor = async (color: any) => {
 	let assertedColor
 	if(typeof color === 'number') {
 		assertedColor = color > 0 ? color : 0xffffffff + Number(color) + 1
@@ -98,7 +97,7 @@ const assertColor = async(color) => {
 	}
 }
 
-export const prepareWAMessageMedia = async(
+export const prepareWAMessageMedia = async (
 	message: AnyMediaMessageContent,
 	options: MediaGenerationOptions
 ) => {
@@ -117,9 +116,9 @@ export const prepareWAMessageMedia = async(
 
 	const uploadData: MediaUploadData = {
 		...message,
-		media: message[mediaType]
+		media: (message as any)[mediaType]
 	}
-	delete uploadData[mediaType]
+	delete (uploadData as any)[mediaType]
 	// check if cacheable + generate cache key
 	const cacheableKey = typeof uploadData.media === 'object' &&
 			('url' in uploadData.media) &&
@@ -146,7 +145,7 @@ export const prepareWAMessageMedia = async(
 			const obj = waproto.Message.decode(mediaBuff)
 			const key = `${mediaType}Message`
 
-			Object.assign(obj[key], { ...uploadData, media: undefined })
+			Object.assign(obj[key as keyof waproto.Message]!, { ...uploadData, media: undefined })
 
 			return obj
 		}
@@ -177,7 +176,7 @@ export const prepareWAMessageMedia = async(
 	 // url safe Base64 encode the SHA256 hash of the body
 	const fileEncSha256B64 = fileEncSha256.toString('base64')
 	const [{ mediaUrl, directPath }] = await Promise.all([
-		(async() => {
+		(async () => {
 			const result = await options.upload(
 				encFilePath,
 				{ fileEncSha256B64, mediaType, timeoutMs: options.mediaUploadTimeoutMs }
@@ -185,7 +184,7 @@ export const prepareWAMessageMedia = async(
 			logger?.debug({ mediaType, cacheableKey }, 'uploaded media')
 			return result
 		})(),
-		(async() => {
+		(async () => {
 			try {
 				if(requiresThumbnailComputation) {
 					const {
@@ -216,13 +215,13 @@ export const prepareWAMessageMedia = async(
 					uploadData.backgroundArgb = await assertColor(options.backgroundColor)
 					logger?.debug('computed backgroundColor audio status')
 				}
-			} catch(error) {
+			} catch(error: any) {
 				logger?.warn({ trace: error.stack }, 'failed to obtain extra info')
 			}
 		})(),
 	])
 		.finally(
-			async() => {
+			async () => {
 				try {
 					await fs.unlink(encFilePath)
 					if(originalFilePath) {
@@ -230,14 +229,14 @@ export const prepareWAMessageMedia = async(
 					}
 
 					logger?.debug('removed tmp files')
-				} catch(error) {
+				} catch(error: any) {
 					logger?.error(error, 'failed to remove tmp files')
 				}
 			}
 		)
 
 	const obj = waproto.Message.fromObject({
-		[`${mediaType}Message`]: MessageTypeProto[mediaType].fromObject(
+		[`${mediaType}Message`]: MessageTypeProto[mediaType as keyof typeof MessageTypeProto].fromObject(
 			{
 				url: mediaUrl,
 				directPath,
@@ -298,9 +297,9 @@ export const generateForwardMessageContent = (
 	content = normalizeMessageContent(content)
 	content = waproto.Message.decode(waproto.Message.encode(content!).finish())
 
-	let key = Object.keys(content)[0] as MessageType
+	let key = Object.keys(content)[0] as keyof waproto.IMessage
 
-	let score = content[key].contextInfo?.forwardingScore || 0
+	let score = (content?.[key] as { contextInfo: waproto.IContextInfo })?.contextInfo?.forwardingScore || 0
 	score += message.key.fromMe && !forceForward ? 0 : 1
 	if(key === 'conversation') {
 		content.extendedTextMessage = { text: content[key] }
@@ -309,16 +308,17 @@ export const generateForwardMessageContent = (
 		key = 'extendedTextMessage'
 	}
 
+	const key_ = content?.[key] as { contextInfo: waproto.IContextInfo }
 	if(score > 0) {
-		content[key].contextInfo = { forwardingScore: score, isForwarded: true }
+		key_.contextInfo = { forwardingScore: score, isForwarded: true }
 	} else {
-		content[key].contextInfo = {}
+		key_.contextInfo = {}
 	}
 
 	return content
 }
 
-export const generateWAMessageContent = async(
+export const generateWAMessageContent = async (
 	message: AnyMessageContent,
 	options: MessageContentGenerationOptions
 ) => {
@@ -366,7 +366,7 @@ export const generateWAMessageContent = async(
 		}
 
 		if(contactLen === 1) {
-			m.contactMessage = waproto.Message.ContactMessage.fromObject(message.contacts.contacts[0])
+			m.contactMessage = waproto.Message.ContactMessage.fromObject(message.contacts.contacts[0]!)
 		} else {
 			m.contactsArrayMessage = waproto.Message.ContactsArrayMessage.fromObject(message.contacts)
 		}
@@ -524,8 +524,8 @@ export const generateWAMessageContent = async(
 				buttonsMessage.contentText = message.caption
 			}
 
-			const type = Object.keys(m)[0].replace('Message', '').toUpperCase()
-			buttonsMessage.headerType = ButtonType[type]
+			const type = Object.keys(m)[0]?.replace('Message', '').toUpperCase()
+			buttonsMessage.headerType = ButtonType[type! as keyof typeof ButtonType] || ButtonType.EMPTY
 
 			Object.assign(buttonsMessage, m)
 		}
@@ -581,9 +581,12 @@ export const generateWAMessageContent = async(
 	}
 
 	if('mentions' in message && message.mentions?.length) {
-		const [messageType] = Object.keys(m)
-		m[messageType].contextInfo = m[messageType] || { }
-		m[messageType].contextInfo.mentionedJid = message.mentions
+		const messageType = Object.keys(m)[0]! as Exclude<keyof waproto.IMessage, 'conversation'>
+		const key = m[messageType]
+		if('contextInfo' in key!) {
+			key.contextInfo = key.contextInfo || {}
+			key.contextInfo.mentionedJid = message.mentions
+		}
 	}
 
 	if('edit' in message) {
@@ -598,9 +601,11 @@ export const generateWAMessageContent = async(
 	}
 
 	if('contextInfo' in message && !!message.contextInfo) {
-		const [messageType] = Object.keys(m)
-		m[messageType] = m[messageType] || {}
-		m[messageType].contextInfo = message.contextInfo
+		const messageType = Object.keys(m)[0]! as Exclude<keyof waproto.IMessage, 'conversation'>
+		const key = m[messageType]
+		if('contextInfo' in key!) {
+			key.contextInfo = { ...key.contextInfo, ...message.contextInfo }
+		}
 	}
 
 	return waproto.Message.fromObject(m)
@@ -618,7 +623,7 @@ export const generateWAMessageFromContent = (
 	}
 
 	const innerMessage = normalizeMessageContent(message)!
-	const key: string = getContentType(innerMessage)!
+	const key = getContentType(innerMessage)! as Exclude<keyof waproto.IMessage, 'conversation'>
 	const timestamp = unixTimestampSeconds(options.timestamp)
 	const { quoted, userJid } = options
 
@@ -635,7 +640,7 @@ export const generateWAMessageFromContent = (
 			delete quotedContent.contextInfo
 		}
 
-		const contextInfo: waproto.IContextInfo = innerMessage[key].contextInfo || { }
+		const contextInfo: waproto.IContextInfo = ('contextInfo' in innerMessage[key]! && innerMessage[key]?.contextInfo) || {}
 		contextInfo.participant = jidNormalizedUser(participant!)
 		contextInfo.stanzaId = quoted.key.id
 		contextInfo.quotedMessage = quotedMsg
@@ -646,7 +651,10 @@ export const generateWAMessageFromContent = (
 			contextInfo.remoteJid = quoted.key.remoteJid
 		}
 
-		innerMessage[key].contextInfo = contextInfo
+		if(contextInfo && innerMessage[key]) {
+			/* @ts-ignore */
+			innerMessage[key].contextInfo = contextInfo
+		}
 	}
 
 	if(
@@ -657,8 +665,9 @@ export const generateWAMessageFromContent = (
 		// already not converted to disappearing message
 		key !== 'ephemeralMessage'
 	) {
+		/* @ts-ignore */
 		innerMessage[key].contextInfo = {
-			...(innerMessage[key].contextInfo || {}),
+			...((innerMessage[key] as any).contextInfo || {}),
 			expiration: options.ephemeralExpiration || WA_DEFAULT_EPHEMERAL,
 			//ephemeralSettingTimestamp: options.ephemeralOptions.eph_setting_ts?.toString()
 		}
@@ -681,7 +690,7 @@ export const generateWAMessageFromContent = (
 	return waproto.WebMessageInfo.fromObject(messageJSON)
 }
 
-export const generateWAMessage = async(
+export const generateWAMessage = async (
 	jid: string,
 	content: AnyMessageContent,
 	options: MessageGenerationOptions,
@@ -878,7 +887,7 @@ export function getAggregateVotesInPollMessage(
 				data = voteHashMap[hash]
 			}
 
-			voteHashMap[hash].voters.push(
+			voteHashMap[hash]!.voters.push(
 				getKeyAuthor(update.pollUpdateMessageKey, meId)
 			)
 		}
@@ -925,7 +934,7 @@ export const downloadMediaMessage = async<Type extends 'buffer' | 'stream'>(
 	ctx?: DownloadMediaMessageContext
 ) => {
 	const result = await downloadMsg()
-		.catch(async(error) => {
+		.catch(async (error) => {
 			if(ctx && axios.isAxiosError(error) && REUPLOAD_REQUIRED_STATUS.includes(error.response?.status!)) {
 				ctx.logger.info({ key: message.key }, 'sending reupload media request...')
 				message = await ctx.reuploadRequest(message)

@@ -27,11 +27,11 @@ export const tryAlternativeDecryption = (
 		try {
 			decipher.setAuthTag(tag)
 			return Buffer.concat([decipher.update(enc), decipher.final()])
-		} catch(error) {
+		} catch(error: any) {
 			logger.debug(error, 'Falha na descriptografia GCM com tag, tentando sem verificação')
 			return decipher.update(enc)
 		}
-	} catch(error) {
+	} catch(error: any) {
 		logger.debug('Falha na primeira tentativa de descriptografia: ' + error.message)
 	}
 
@@ -39,7 +39,7 @@ export const tryAlternativeDecryption = (
 	try {
 		const decipher = createDecipheriv('aes-256-cbc', cipherKeyBuf, ivBuf)
 		return Buffer.concat([decipher.update(ciphertext), decipher.final()])
-	} catch(error) {
+	} catch(error: any) {
 		logger.debug('Falha na segunda tentativa de descriptografia: ' + error.message)
 	}
 
@@ -47,7 +47,7 @@ export const tryAlternativeDecryption = (
 	try {
 		const decipher = createDecipheriv('aes-256-ctr', cipherKeyBuf, ivBuf)
 		return Buffer.concat([decipher.update(ciphertext)])
-	} catch(error) {
+	} catch(error: any) {
 		logger.debug('Falha na terceira tentativa de descriptografia: ' + error.message)
 	}
 
@@ -91,7 +91,7 @@ export const createFallbackDecryptStream = (
 
 					try {
 						aes = createDecipheriv('aes-256-cbc', cipherKeyBuf, ivValue)
-					} catch(error) {
+					} catch(error: any) {
 						logger.error({ error }, 'Erro ao criar decifragem')
 						callback(null)
 						return
@@ -101,11 +101,11 @@ export const createFallbackDecryptStream = (
 				try {
 					this.push(aes.update(data))
 					callback()
-				} catch(error) {
+				} catch(error: any) {
 					logger.error({ error }, 'Erro na descriptografia (update)')
 					callback(null)
 				}
-			} catch(error) {
+			} catch(error: any) {
 				logger.error({ error }, 'Erro geral de descriptografia')
 				callback(null)
 			}
@@ -116,14 +116,14 @@ export const createFallbackDecryptStream = (
 				if(aes) {
 					try {
 						this.push(aes.final())
-					} catch(error) {
+					} catch(error: any) {
 						logger.error({ error }, 'Erro no final da descriptografia')
 						// Ignora erro e continua
 					}
 				}
 
 				callback()
-			} catch(error) {
+			} catch(error: any) {
 				logger.error({ error }, 'Erro final')
 				callback()
 			}

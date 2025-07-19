@@ -1,7 +1,8 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'crypto'
+/* @ts-ignore */
 import * as libsignal from 'libsignal'
 import { KEY_BUNDLE_TYPE } from '../Defaults'
-import { KeyPair } from '../Types'
+import type { KeyPair } from '../Types'
 import logger from './logger'
 
 /** prefix version byte to the pub keys, required for some curve crypto functions */
@@ -31,7 +32,7 @@ export const Curve = {
 		try {
 			libsignal.curve.verifySignature(generateSignalPubKey(pubKey), message, signature)
 			return true
-		} catch(error) {
+		} catch(error: any) {
 			logger.error({ error }, 'Erro ao verificar assinatura')
 			return false
 		}
@@ -73,18 +74,18 @@ export function aesDecryptGCM(ciphertext: Uint8Array, key: Uint8Array, iv: Uint8
 
 		try {
 			decipher.setAuthTag(tag)
-		} catch(error) {
+		} catch(error: any) {
 			logger.error({ error, tag }, 'Erro ao definir tag de autenticação')
 			return Buffer.concat([decipher.update(enc), decipher.final()])
 		}
 
 		try {
 			return Buffer.concat([decipher.update(enc), decipher.final()])
-		} catch(error) {
+		} catch(error: any) {
 			logger.error({ error, enc }, 'Erro ao decodificar GCM')
 			return decipher.update(enc)
 		}
-	} catch(error) {
+	} catch(error: any) {
 		logger.error({
 			error,
 			ciphertextLength: ciphertext.length,

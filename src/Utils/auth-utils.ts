@@ -1,10 +1,8 @@
-import NodeCache from '@cacheable/node-cache'
 import { randomBytes } from 'crypto'
-import { DEFAULT_CACHE_TTLS } from '../Defaults'
 import type { AuthenticationCreds, CacheStore, SignalDataSet, SignalDataTypeMap, SignalKeyStore, SignalKeyStoreWithTransaction, TransactionCapabilityOptions } from '../Types'
 import { Curve, signedKeyPair } from './crypto'
 import { delay, generateRegistrationId } from './generics'
-import { ILogger } from './logger'
+import type { ILogger } from './logger'
 
 
 function getUniqueId(type: string, id: string) {
@@ -22,18 +20,14 @@ export function makeCacheableSignalKeyStore(
 	logger: ILogger,
 	_cache?: CacheStore
 ): SignalKeyStore {
-	const cache = _cache || new NodeCache({
-		stdTTL: DEFAULT_CACHE_TTLS.SIGNAL_STORE, // 5 minutes
-		useClones: false,
-		deleteOnExpire: true,
-	})
+	const cache = _cache
 
 	return {
 		async get(type, ids) {
-			const data: { [_: string]: SignalDataTypeMap[typeof type] } = { }
+			const data: { [_: string]: SignalDataTypeMap[typeof type] } = {}
 			const idsToFetch: string[] = []
 			for(const id of ids) {
-				const item = cache.get<SignalDataTypeMap[typeof type]>(getUniqueId(type, id))
+				const item = cache?.get<SignalDataTypeMap[typeof type]>(getUniqueId(type, id))
 				if(typeof item !== 'undefined') {
 					data[id] = item
 				} else {
@@ -48,7 +42,7 @@ export function makeCacheableSignalKeyStore(
 					const item = fetched[id]
 					if(item) {
 						data[id] = item
-						cache.set(getUniqueId(type, id), item)
+						cache?.set(getUniqueId(type, id), item)
 					}
 				}
 			}
@@ -58,8 +52,8 @@ export function makeCacheableSignalKeyStore(
 		async set(data) {
 			let keys = 0
 			for(const type in data) {
-				for(const id in data[type]) {
-					cache.set(getUniqueId(type, id), data[type][id])
+				for(const id in data[type as keyof SignalDataTypeMap]) {
+					cache?.set(getUniqueId(type, id), data[type as keyof SignalDataTypeMap]![id])
 					keys += 1
 				}
 			}
@@ -69,7 +63,7 @@ export function makeCacheableSignalKeyStore(
 			await store.set(data)
 		},
 		async clear() {
-			cache.flushAll()
+			cache?.flushAll()
 			await store.clear?.()
 		}
 	}
@@ -96,7 +90,7 @@ export const addTransactionCapability = (
 	let transactionsInProgress = 0
 
 	return {
-		get: async(type, ids) => {
+		get: async (type, ids) => {
 			if(isInTransaction()) {
 				const dict = transactionCache[type]
 				const idsRequiringFetch = dict
@@ -114,15 +108,14 @@ export const addTransactionCapability = (
 					)
 				}
 
-				return ids.reduce(
-					(dict, id) => {
-						const value = transactionCache[type]?.[id]
-						if(value) {
-							dict[id] = value
-						}
+				return ids.reduce((dict: { [T in string]: any }, id) => {
+					const value = transactionCache[type]?.[id]
+					if(value) {
+						dict[id] = value
+					}
 
-						return dict
-					}, { }
+					return dict
+				}, { }
 				)
 			} else {
 				return state.get(type, ids)
@@ -131,12 +124,13 @@ export const addTransactionCapability = (
 		set: data => {
 			if(isInTransaction()) {
 				logger.trace({ types: Object.keys(data) }, 'caching in transaction')
-				for(const key in data) {
-					transactionCache[key] = transactionCache[key] || { }
-					Object.assign(transactionCache[key], data[key])
+				for(const key_ in data) {
+					const key = key_ as keyof SignalDataTypeMap
+					transactionCache[key] = transactionCache[key] || ({} as any)
+					Object.assign(transactionCache[key]!, data[key])
 
-					mutations[key] = mutations[key] || { }
-					Object.assign(mutations[key], data[key])
+					mutations[key] = mutations[key] || ({} as any)
+					Object.assign(mutations[key]!, data[key])
 				}
 			} else {
 				return state.set(data)
@@ -166,7 +160,7 @@ export const addTransactionCapability = (
 								await state.set(mutations)
 								logger.trace({ dbQueriesInTransaction }, 'committed transaction')
 								break
-							} catch(error) {
+							} catch(error: any) {
 								logger.error(error, `failed to commit transaction, tries left=${tries}`)
 								logger.warn(`failed to commit ${Object.keys(mutations).length} mutations, tries left=${tries}`)
 								await delay(delayBetweenTriesMs)

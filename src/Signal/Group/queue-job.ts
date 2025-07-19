@@ -12,7 +12,7 @@ async function _asyncQueueExecutor(queue: Array<QueueJob<any>>, cleanup: () => v
 	while(_gcLimit <= 10000) {
 		const limit = Math.min(queue.length, _gcLimit)
 		for(let i = offt; i < limit; i++) {
-			const job = queue[i]
+			const job = queue[i]!
 			try {
 				job.resolve(await job.awaitable())
 			} catch(e) {

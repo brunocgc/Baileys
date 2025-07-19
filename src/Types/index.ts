@@ -1,4 +1,4 @@
-/* eslint-disable no-restricted-syntax */
+ 
 export * from './Auth'
 export * from './Call'
 export * from './Chat'
@@ -11,8 +11,8 @@ export * from './Signal'
 export * from './Socket'
 export * from './State'
 
-import { AuthenticationState } from './Auth'
-import { SocketConfig } from './Socket'
+import type { AuthenticationState } from './Auth'
+import type { SocketConfig } from './Socket'
 
 export type UserFacingSocketConfig = Partial<SocketConfig> & { auth: AuthenticationState }
 

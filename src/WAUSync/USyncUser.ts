@@ -1,9 +1,9 @@
 export class USyncUser {
-	id: string
-	lid: string
+	id?: string
+	lid?: string
 	username?: string
-	phone: string
-	type: string
+	phone?: string
+	type?: string
 
 	withId(id: string) {
 		this.id = id
